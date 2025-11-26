@@ -1,5 +1,6 @@
 import { mouse, keyboard, Key, Button, Point } from '@nut-tree-fork/nut-js';
 import { logEvent, logError } from './log';
+import { showClickIndicator } from './cursorIndicator';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -131,6 +132,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'click': {
         const { x, y, button = 'left' } = action;
         logEvent('action_click', { x, y, button });
+        showClickIndicator(x!, y!);
         await mouse.setPosition(new Point(x!, y!));
         await sleep(60);
         await mouse.click(
@@ -141,6 +143,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'double_click': {
         const { x, y } = action;
         logEvent('action_double_click', { x, y });
+        showClickIndicator(x!, y!);
         await mouse.setPosition(new Point(x!, y!));
         await sleep(60);
         await mouse.doubleClick(Button.LEFT);
@@ -149,6 +152,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'right_click': {
         const { x, y } = action;
         logEvent('action_right_click', { x, y });
+        showClickIndicator(x!, y!);
         await mouse.setPosition(new Point(x!, y!));
         await sleep(60);
         await mouse.click(Button.RIGHT);

@@ -8,6 +8,8 @@ A native macOS desktop client for Claude's computer use capability. Lark provide
 - **Claude Computer Use**: Leverages Anthropic's computer use API to control mouse, keyboard, and observe screen
 - **Native Performance**: Built with Electron for macOS, uses native APIs for screen capture and input control
 - **Real-time Feedback**: Shows step-by-step progress as Claude executes tasks
+- **Visual Click Indicator**: Red circle flashes at each click location so you can see where Claude is clicking
+- **Emergency Stop**: Press Escape anywhere to immediately stop the current task
 - **Conversation History**: Persists chat history across sessions
 
 ## Architecture
@@ -15,9 +17,11 @@ A native macOS desktop client for Claude's computer use capability. Lark provide
 ```
 src/
 ├── main/                    # Electron main process
-│   ├── main.ts             # App entry, window management, IPC handlers
+│   ├── main.ts             # App entry, window management, global hotkeys
+│   ├── ipcHandlers.ts      # All IPC handlers (separated for clarity)
 │   ├── config.ts           # Environment and configuration management
 │   ├── computerActions.ts  # Mouse/keyboard control via nut.js
+│   ├── cursorIndicator.ts  # Visual click feedback overlay
 │   ├── screen.ts           # Screenshot capture
 │   ├── log.ts              # Logging utilities
 │   ├── statusManager.ts    # Real-time status updates to renderer
