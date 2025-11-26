@@ -1,0 +1,323 @@
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#pill {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 30, 30, 0.95);
+  border-radius: 24px;
+  padding: 6px 16px;
+  box-sizing: border-box;
+  transition:
+    max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.3s ease,
+    width 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 120px;
+  height: auto; /* allow content-driven height */
+  max-height: 32px; /* collapsed cap */
+  /* Only hide vertical overflow so waveform can overflow horizontally if needed */
+  overflow-y: hidden; /* animate expansion upward */
+  overflow-x: visible;
+  cursor: pointer;
+}
+
+#pill:hover,
+#pill.expanded {
+  width: 350px;
+  /* height stays auto; cap with max-height */
+  max-height: 40px;
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#pill.collapsed {
+  width: 120px;
+  max-height: 32px;
+}
+
+#pill.collapsed::before {
+  content: none;
+}
+
+#pill.collapsed #prompt,
+#pill.collapsed .input-row {
+  display: none;
+}
+
+/* show input row when expanded */
+#pill:not(.collapsed) .input-row {
+  display: flex;
+}
+
+/* Siri-like waveform for collapsed state */
+#waveform {
+  display: none;
+  width: 100%;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 2px; /* even tighter horizontal inset */
+  box-sizing: border-box; /* keep padding inside width */
+}
+
+#pill.collapsed #waveform {
+  display: flex;
+}
+
+#waveform canvas {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 6px rgba(10, 132, 255, 0.35));
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  #waveform {
+    display: none !important;
+  }
+}
+
+#prompt {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: white;
+  text-align: left;
+  font-family: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#prompt::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hidden {
+  display: none;
+}
+
+.loader {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  margin-right: 8px;
+  animation: spin 1s linear infinite;
+}
+
+.send-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: black;
+  font-size: 14px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+/* Clear-state appearance */
+.send-btn.clear {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.95);
+}
+.send-btn.clear:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Icon inside send button */
+.send-btn .icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Horizontal input row */
+.input-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Response block shown above the input when present */
+.response {
+  display: none;
+  color: white;
+  font-size: 13px;
+  line-height: 1.25;
+  margin-bottom: 6px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.response .message {
+  margin-bottom: 6px;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+.response .message.user {
+  color: rgba(255, 255, 255, 0.7);
+}
+.response .message.assistant {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* entry animation states */
+.response .message.enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* When a response is shown, expand upward with scrollable content cap */
+#pill.showing-response {
+  /* keep same width and radius; increase height upward */
+  max-height: 260px; /* animate from 40px to this */
+}
+
+#pill.showing-response .response {
+  display: block;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+#pill.collapsed .response {
+  display: none !important;
+}
+
+/* API Key Setup */
+.api-key-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.api-key-setup.hidden {
+  display: none;
+}
+
+.api-key-label {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  text-align: center;
+}
+
+.api-key-label span {
+  color: white;
+  font-weight: 500;
+}
+
+.api-key-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#api-key-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  color: white;
+  font-family: monospace;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+#api-key-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+#api-key-input:focus {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.save-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: white;
+  border: none;
+  color: black;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.save-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.api-key-error {
+  color: #ff6b6b;
+  font-size: 11px;
+  text-align: center;
+}
+
+.api-key-error.hidden {
+  display: none;
+}
+
+/* When showing API key setup, expand the pill */
+#pill.needs-api-key {
+  width: 350px;
+  max-height: 120px;
+}
+
+#pill.needs-api-key.collapsed {
+  width: 350px;
+  max-height: 120px;
+}
+
+#pill.needs-api-key #waveform {
+  display: none;
+}
+
+#pill.needs-api-key #main-input {
+  display: none;
+}
+

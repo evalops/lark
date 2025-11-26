@@ -1,0 +1,51 @@
+{
+  "name": "lark",
+  "version": "0.1.0",
+  "description": "Native macOS client for Claude computer use",
+  "author": "Jonathan",
+  "license": "MIT",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "npm run build && electron .",
+    "build": "tsc && tsc -p tsconfig.renderer.json",
+    "start": "electron .",
+    "package": "electron-builder --mac",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.1",
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "dotenv": "^17.2.1",
+    "node-mac-permissions": "^1.2.0",
+    "screenshot-desktop": "^1.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.3.0"
+  },
+  "build": {
+    "appId": "com.jonathan.lark",
+    "productName": "Lark",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "files": [
+      "dist/main/**/*",
+      "dist/preload/**/*",
+      "dist/renderer/**/*",
+      "public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "packaging/runtime/default.env",
+        "to": "default.env"
+      }
+    ]
+  }
+}

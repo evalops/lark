@@ -1,0 +1,152 @@
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import dotenv from 'dotenv';
+
+const cliDefinedKeys = new Set(Object.keys(process.env));
+
+bootstrapEnv();
+
+function bootstrapEnv(): void {
+  loadBundledDefaults();
+  loadProjectEnv();
+  loadUserEnv();
+}
+
+function loadBundledDefaults(): void {
+  for (const candidate of bundledEnvCandidates()) {
+    if (fs.existsSync(candidate)) {
+      applyEnvFile(candidate, { overrideExisting: false });
+      break;
+    }
+  }
+}
+
+function bundledEnvCandidates(): string[] {
+  const candidates: string[] = [];
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, 'default.env'));
+  }
+  candidates.push(path.resolve(__dirname, '../../packaging/runtime/default.env'));
+  return candidates;
+}
+
+function loadProjectEnv(): void {
+  const candidates = [
+    path.resolve(__dirname, '../../.env'),
+    path.join(process.cwd(), '.env'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      applyEnvFile(candidate, { overrideExisting: true });
+      break;
+    }
+  }
+}
+
+function loadUserEnv(): void {
+  const userEnv = getUserEnvPath();
+  if (fs.existsSync(userEnv)) {
+    applyEnvFile(userEnv, { overrideExisting: true });
+  }
+}
+
+function applyEnvFile(filePath: string, opts: { overrideExisting: boolean }): void {
+  try {
+    const parsed = dotenv.parse(fs.readFileSync(filePath, 'utf8'));
+    applyEnv(parsed, opts);
+  } catch (err) {
+    console.warn(`Failed to load env file ${filePath}:`, err);
+  }
+}
+
+function applyEnv(
+  values: Record<string, string>,
+  opts: { overrideExisting: boolean }
+): void {
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (cliDefinedKeys.has(key)) return;
+    const alreadySet = process.env[key] !== undefined;
+    if (alreadySet && !opts.overrideExisting) return;
+    process.env[key] = value;
+  });
+}
+
+function num(envVar: string | undefined, fallback: number): number {
+  const n = Number(envVar);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function str(envVar: string | undefined, fallback: string): string {
+  return envVar && envVar.length > 0 ? envVar : fallback;
+}
+
+export interface Config {
+  model: { provider: string };
+  claude: { apiKey: string; model: string };
+  agent: { maxSteps: number; minStepDelayMs: number };
+  ui: {
+    pillBaseHeight: number;
+    maxPromptLength: number;
+    maxTypeLength: number;
+    maxHistoryEntries: number;
+    windowMaxHeight: number;
+  };
+  actions: {
+    arrowKeyHoldDuration: number;
+    dragHoldDuration: number;
+    dragMinSteps: number;
+    dragStepPixels: number;
+  };
+}
+
+function buildConfig(): Config {
+  return {
+    model: {
+      provider: 'claude',
+    },
+    claude: {
+      apiKey: str(process.env.ANTHROPIC_API_KEY, ''),
+      model: str(process.env.CLAUDE_MODEL, 'claude-opus-4-5-20251101'),
+    },
+    agent: {
+      maxSteps: num(process.env.CUA_MAX_STEPS, 1000),
+      minStepDelayMs: num(process.env.AGENT_MIN_STEP_DELAY_MS, 1000),
+    },
+    ui: {
+      pillBaseHeight: num(process.env.PILL_BASE_HEIGHT, 60),
+      maxPromptLength: num(process.env.MAX_PROMPT_LEN, 5000),
+      maxTypeLength: num(process.env.MAX_TYPE_LEN, 500),
+      maxHistoryEntries: num(process.env.MAX_HISTORY_ENTRIES, 200),
+      windowMaxHeight: num(process.env.WINDOW_MAX_HEIGHT, 320),
+    },
+    actions: {
+      arrowKeyHoldDuration: num(process.env.ACTION_ARROW_HOLD_MS, 500),
+      dragHoldDuration: num(process.env.ACTION_DRAG_HOLD_MS, 200),
+      dragMinSteps: num(process.env.ACTION_DRAG_MIN_STEPS, 20),
+      dragStepPixels: num(process.env.ACTION_DRAG_STEP_PIXELS, 20),
+    },
+  };
+}
+
+export let config = buildConfig();
+
+export function refreshConfig(): void {
+  config = buildConfig();
+}
+
+export function getUserEnvPath(): string {
+  const base =
+    process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support')
+      : process.env.APPDATA || path.join(os.homedir(), '.config');
+  return path.join(base, 'Lark', 'user.env');
+}
+
+export function validateConfig(): string[] {
+  const errors: string[] = [];
+  if (!config.claude.apiKey) errors.push('ANTHROPIC_API_KEY is not set');
+  if (!config.claude.model) errors.push('CLAUDE_MODEL is not set');
+  return errors;
+}

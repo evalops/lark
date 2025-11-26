@@ -1,0 +1,412 @@
+import { screen } from 'electron';
+import { captureBase64, captureRegionBase64 } from '../screen';
+import { logEvent, logError } from '../log';
+import { sendStatusUpdate } from '../statusManager';
+import { config } from '../config';
+import { executeComputerAction } from '../computerActions';
+import { ClaudeModelClient, DisplayInfo, StreamEvent } from './modelClient';
+import Anthropic from '@anthropic-ai/sdk';
+
+const SCREENSHOT_WIDTH = 1280;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+function getDisplayInfo(): DisplayInfo {
+  const primary = screen.getPrimaryDisplay();
+  const bounds = primary.bounds;
+  const screenshotScale = bounds.width / SCREENSHOT_WIDTH;
+  const screenshotHeight = Math.round(bounds.height / screenshotScale);
+
+  return {
+    width: SCREENSHOT_WIDTH,
+    height: screenshotHeight,
+    actualWidth: bounds.width,
+    actualHeight: bounds.height,
+    screenshotScale,
+  };
+}
+
+function claudeSystemPrompt(): string {
+  return `You are Claude, a computer-use agent controlling a macOS desktop.
+
+<tool_usage>
+Use the computer tool to interact with the screen. Always observe the current state via screenshot before acting.
+Issue one action per turn for reliable state tracking between actions.
+</tool_usage>
+
+<interaction_guidance>
+Prefer keyboard shortcuts for OS actions—they are more reliable than clicking:
+- Command+Space: Spotlight search
+- Command+L: Browser URL bar
+- Command+Tab: Switch apps
+- Command+W: Close window/tab
+
+When clicking UI elements, aim for the visual center—edge detection is less reliable and causes misclicks.
+If an action fails: (1) adjust coordinates slightly, (2) try keyboard shortcuts instead.
+</interaction_guidance>
+
+<persistence>
+Do not terminate prematurely. Keep acting or waiting until success or failure is unambiguous.
+If the UI is loading or animating, use the wait action rather than ending early.
+Track your progress: what you have done, what remains, and whether you are making forward progress.
+</persistence>
+
+When the task is complete, respond with a brief summary of what you accomplished.`;
+}
+
+function scaleCoord(coord: [number, number], scale: number): { x: number; y: number } {
+  return {
+    x: Math.round(coord[0] * scale),
+    y: Math.round(coord[1] * scale),
+  };
+}
+
+interface ClaudeAction {
+  action: string;
+  coordinate?: [number, number];
+  start_coordinate?: [number, number];
+  text?: string;
+  scroll_direction?: 'up' | 'down' | 'left' | 'right';
+  scroll_amount?: number;
+  duration?: number;
+  region?: [number, number, number, number];
+}
+
+async function executeClaudeAction(
+  action: ClaudeAction,
+  display: DisplayInfo
+): Promise<string> {
+  const scale = display.screenshotScale;
+
+  switch (action.action) {
+    case 'screenshot':
+      return 'screenshot_taken';
+
+    case 'left_click': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      await executeComputerAction({ type: 'click', x, y, button: 'left' });
+      return 'ok';
+    }
+
+    case 'right_click': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      await executeComputerAction({ type: 'click', x, y, button: 'right' });
+      return 'ok';
+    }
+
+    case 'middle_click': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      await executeComputerAction({ type: 'click', x, y, button: 'middle' });
+      return 'ok';
+    }
+
+    case 'double_click': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      await executeComputerAction({ type: 'double_click', x, y });
+      return 'ok';
+    }
+
+    case 'triple_click': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      for (let i = 0; i < 3; i++) {
+        await executeComputerAction({ type: 'click', x, y, button: 'left' });
+        await sleep(50);
+      }
+      return 'ok';
+    }
+
+    case 'mouse_move': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      await executeComputerAction({ type: 'move', x, y });
+      return 'ok';
+    }
+
+    case 'left_click_drag': {
+      const start = scaleCoord(action.start_coordinate!, scale);
+      const end = scaleCoord(action.coordinate!, scale);
+      await executeComputerAction({
+        type: 'drag',
+        startX: start.x,
+        startY: start.y,
+        endX: end.x,
+        endY: end.y,
+      });
+      return 'ok';
+    }
+
+    case 'type': {
+      await executeComputerAction({ type: 'type', text: action.text });
+      return 'ok';
+    }
+
+    case 'key': {
+      const keys = action.text!.split('+').map((k) => k.trim());
+      await executeComputerAction({ type: 'keypress', keys });
+      return 'ok';
+    }
+
+    case 'scroll': {
+      const { x, y } = scaleCoord(action.coordinate!, scale);
+      const scrollAmount = (action.scroll_amount ?? 3) * 100;
+      let scrollX = 0;
+      let scrollY = 0;
+      switch (action.scroll_direction) {
+        case 'up':
+          scrollY = -scrollAmount;
+          break;
+        case 'down':
+          scrollY = scrollAmount;
+          break;
+        case 'left':
+          scrollX = -scrollAmount;
+          break;
+        case 'right':
+          scrollX = scrollAmount;
+          break;
+      }
+      await executeComputerAction({ type: 'scroll', x, y, scrollX, scrollY });
+      return 'ok';
+    }
+
+    case 'wait': {
+      const duration = Math.max(0, Math.min((action.duration ?? 1) * 1000, 10000));
+      await sleep(duration);
+      return 'ok';
+    }
+
+    case 'hold_key': {
+      const keys = action.text!.split('+').map((k) => k.trim());
+      await executeComputerAction({ type: 'keypress', keys });
+      return 'ok';
+    }
+
+    default:
+      logError('claude_unknown_action', new Error(`Unknown Claude action: ${action.action}`));
+      return 'error: unknown action';
+  }
+}
+
+function describeClaudeAction(action: ClaudeAction): string {
+  switch (action.action) {
+    case 'screenshot':
+      return 'Taking screenshot';
+    case 'left_click':
+      return `Click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'right_click':
+      return `Right-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'double_click':
+      return `Double-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'triple_click':
+      return `Triple-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'middle_click':
+      return `Middle-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'mouse_move':
+      return `Move mouse to (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'left_click_drag':
+      return `Drag from (${action.start_coordinate![0]}, ${action.start_coordinate![1]}) to (${action.coordinate![0]}, ${action.coordinate![1]})`;
+    case 'type': {
+      const text = action.text!.length > 30 ? action.text!.slice(0, 30) + '...' : action.text!;
+      return `Type "${text}"`;
+    }
+    case 'key':
+      return `Press ${action.text}`;
+    case 'scroll':
+      return `Scroll ${action.scroll_direction} by ${action.scroll_amount}`;
+    case 'wait':
+      return 'Waiting';
+    case 'hold_key':
+      return `Hold ${action.text}`;
+    default:
+      return 'Execute action';
+  }
+}
+
+export async function processComputerUseClaude(
+  client: ClaudeModelClient,
+  prompt: string,
+  abortSignal?: AbortSignal
+): Promise<string> {
+  const display = getDisplayInfo();
+  const messages: Anthropic.MessageParam[] = [];
+  const maxSteps = config.agent?.maxSteps ?? 20;
+  const minStepDelay = Math.max(0, config.agent?.minStepDelayMs ?? 0);
+
+  logEvent('claude_agent_start', { prompt });
+  sendStatusUpdate('Step 1: Taking initial screenshot');
+
+  const initialScreenshot = await captureBase64({
+    width: display.width,
+    height: display.height,
+  });
+
+  messages.push({
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: `Task: ${prompt}\n\nHere is the current screen. Use the computer tool to complete this task.`,
+      },
+      {
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: initialScreenshot },
+      },
+    ],
+  });
+
+  for (let step = 1; step <= maxSteps; step++) {
+    if (abortSignal?.aborted) {
+      sendStatusUpdate('Cancelled');
+      return 'Task cancelled by user';
+    }
+
+    logEvent('claude_step_start', { step });
+    sendStatusUpdate(`Step ${step}: Thinking...`);
+
+    let streamingText = '';
+    const onStreamEvent = (event: StreamEvent): void => {
+      if (event.type === 'text_delta' && event.text) {
+        streamingText += event.text;
+        const preview =
+          streamingText.length > 50 ? streamingText.slice(-50) + '...' : streamingText;
+        sendStatusUpdate(`Step ${step}: ${preview}`);
+      } else if (event.type === 'tool_use_start') {
+        sendStatusUpdate(`Step ${step}: ${event.name}...`);
+      }
+    };
+
+    let response;
+    try {
+      response = await client.computerUseStream(
+        {
+          messages,
+          systemPrompt: claudeSystemPrompt(),
+          display,
+          signal: abortSignal,
+        },
+        onStreamEvent
+      );
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') {
+        sendStatusUpdate('Cancelled');
+        return 'Task cancelled by user';
+      }
+      logError('claude_api_error', err as Error);
+      sendStatusUpdate(`API Error: ${String((err as Error)?.message || 'Unknown error')}`);
+      await sleep(2000);
+      continue;
+    }
+
+    logEvent('claude_response_received', {
+      step,
+      stopReason: response.stopReason,
+      tokens: response.usage
+        ? {
+            input: response.usage.inputTokens,
+            output: response.usage.outputTokens,
+            cacheCreation: response.usage.cacheCreationTokens,
+            cacheRead: response.usage.cacheReadTokens,
+          }
+        : undefined,
+    });
+
+    const sanitizedContent = response.content.map((block) => {
+      if (block.type === 'text') {
+        return { type: 'text' as const, text: block.text };
+      }
+      if (block.type === 'tool_use') {
+        return {
+          type: 'tool_use' as const,
+          id: block.id,
+          name: block.name,
+          input: block.input,
+        };
+      }
+      return block;
+    });
+
+    messages.push({ role: 'assistant', content: sanitizedContent });
+
+    const toolUseBlocks = response.content.filter(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+    );
+
+    if (toolUseBlocks.length === 0) {
+      const textBlock = response.content.find(
+        (block): block is Anthropic.TextBlock => block.type === 'text'
+      );
+      if (textBlock?.text) {
+        logEvent('claude_task_complete', { step });
+        sendStatusUpdate('Task complete');
+        return textBlock.text;
+      }
+      if (response.stopReason === 'end_turn') {
+        return 'Task completed';
+      }
+      continue;
+    }
+
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+    for (const toolUse of toolUseBlocks) {
+      const action = toolUse.input as ClaudeAction;
+      const actionDesc = describeClaudeAction(action);
+      sendStatusUpdate(`Step ${step}: ${actionDesc}`);
+      logEvent('claude_action', { step, action: action.action });
+
+      try {
+        if (action.action === 'screenshot') {
+          const screenshot = await captureBase64({
+            width: display.width,
+            height: display.height,
+          });
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: screenshot },
+              },
+            ],
+          });
+        } else {
+          const result = await executeClaudeAction(action, display);
+          const screenshot = await captureBase64({
+            width: display.width,
+            height: display.height,
+          });
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: [
+              { type: 'text', text: result },
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: screenshot },
+              },
+            ],
+          });
+        }
+      } catch (err) {
+        logError('claude_action_error', err as Error);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: `Error: ${String((err as Error)?.message || 'Action failed')}`,
+          is_error: true,
+        });
+      }
+    }
+
+    messages.push({ role: 'user', content: toolResults });
+
+    if (minStepDelay > 0) {
+      await sleep(minStepDelay);
+    }
+  }
+
+  logEvent('claude_max_steps_reached', { maxSteps });
+  sendStatusUpdate('Max steps reached');
+  return 'Max steps reached without completing the task';
+}

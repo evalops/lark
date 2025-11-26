@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lark</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="pill" class="collapsed">
+      <div id="waveform" aria-hidden="true"></div>
+      <div id="response" class="response hidden"></div>
+      <div id="api-key-setup" class="api-key-setup hidden">
+        <div class="api-key-label">Enter your <span id="provider-name">Anthropic</span> API key:</div>
+        <div class="api-key-input-row">
+          <input id="api-key-input" type="password" placeholder="sk-ant-..." autocomplete="off" />
+          <button id="api-key-save" class="save-btn">Save</button>
+        </div>
+        <div id="api-key-error" class="api-key-error hidden"></div>
+      </div>
+      <div id="main-input" class="input-row">
+        <div id="loader" class="loader hidden"></div>
+        <input id="prompt" type="text" placeholder="Ask me to control your computer..." />
+        <button id="send" class="send-btn">&#8593;</button>
+      </div>
+    </div>
+    <script src="../dist/renderer/renderer.js" onerror="this.src='renderer.js'"></script>
+  </body>
+</html>
