@@ -67,8 +67,8 @@ function getDisplayInfo(): DisplayInfo {
   };
 }
 
-function claudeSystemPrompt(): string {
-  return `You are Claude, a computer-use agent controlling a macOS desktop.
+function getSystemPrompt(): string {
+  return `You are a computer-use agent controlling a macOS desktop.
 
 <tool_usage>
 Use the computer tool to interact with the screen. Always observe the current state via screenshot before acting.
@@ -455,7 +455,7 @@ export async function processComputerUse(
       response = await client.computerUseStream(
         {
           messages,
-          systemPrompt: claudeSystemPrompt(), // TODO: Make this provider-agnostic if needed
+          systemPrompt: getSystemPrompt(),
           display,
           signal: abortSignal,
         },
