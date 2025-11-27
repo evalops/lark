@@ -52,6 +52,9 @@
         "from": "native/axdumper",
         "to": "axdumper"
       }
+    ],
+    "publish": [
+      "github"
     ]
   }
 }
