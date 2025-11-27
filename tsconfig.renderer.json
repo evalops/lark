@@ -6,7 +6,7 @@
     "outDir": "./dist/renderer",
     "rootDir": "./src/renderer",
     "strict": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,

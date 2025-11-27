@@ -92,6 +92,7 @@ export interface Config {
     maxTypeLength: number;
     maxHistoryEntries: number;
     windowMaxHeight: number;
+    windowWidth: number;
   };
   actions: {
     arrowKeyHoldDuration: number;
@@ -120,6 +121,7 @@ function buildConfig(): Config {
       maxTypeLength: num(process.env.MAX_TYPE_LEN, 500),
       maxHistoryEntries: num(process.env.MAX_HISTORY_ENTRIES, 200),
       windowMaxHeight: num(process.env.WINDOW_MAX_HEIGHT, 320),
+      windowWidth: num(process.env.WINDOW_WIDTH, 400),
     },
     actions: {
       arrowKeyHoldDuration: num(process.env.ACTION_ARROW_HOLD_MS, 500),

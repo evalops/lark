@@ -1,5 +1,24 @@
-// @ts-nocheck
-let PILL_BASE_HEIGHT = (window as any)?.larkAPI?.constants?.PILL_BASE_HEIGHT ?? 60;
+interface LarkAPI {
+  askOpenAI: (prompt: string) => Promise<string>;
+  stopComputerUse: () => Promise<void>;
+  moveMouse: (coords: { x: number; y: number }) => Promise<void>;
+  typeText: (text: string) => Promise<void>;
+  captureScreen: () => Promise<void>;
+  setWindowHeight: (height: number) => Promise<void>;
+  getHistory: () => Promise<Array<{ role: string; content: string }>>;
+  clearHistory: () => Promise<void>;
+  onStatusUpdate: (callback: (status: string) => void) => void;
+  constants: { PILL_BASE_HEIGHT: number };
+  getConstants: () => Promise<{ PILL_BASE_HEIGHT: number }>;
+  getConfigStatus: () => Promise<{ needsApiKey: boolean; hasApiKey: boolean; provider: string }>;
+  saveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+interface Window {
+  larkAPI: LarkAPI;
+}
+
+let PILL_BASE_HEIGHT = window.larkAPI?.constants?.PILL_BASE_HEIGHT ?? 60;
 
 function must<T extends HTMLElement>(v: T | null, id: string): T {
   if (!v) throw new Error(`Missing #${id}`);
@@ -292,8 +311,8 @@ function setWindowHeightDebounced(height: number, delay = 60): void {
   setHeightTimer = window.setTimeout(() => {
     try {
       window.larkAPI.setWindowHeight(height);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Failed to set window height:', err);
     }
   }, delay);
 }
@@ -308,8 +327,8 @@ function fitWindowToPill(): void {
     const extra = 16;
     const target = Math.ceil(rect.height + extra);
     setWindowHeightDebounced(target);
-  } catch {
-    // ignore
+  } catch (err) {
+    console.error('Failed to fit window to pill:', err);
   }
 }
 
@@ -368,8 +387,8 @@ async function loadAndRenderHistory(): Promise<void> {
       pill.classList.add('showing-response');
       requestAnimationFrame(() => fitWindowToPill());
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.error('Failed to load history:', err);
   }
 }
 
@@ -394,8 +413,8 @@ if (window.larkAPI?.getConstants) {
         setWindowBaseHeight();
       }
     })
-    .catch(() => {
-      // ignore
+    .catch((err) => {
+      console.error('Failed to get constants:', err);
     });
 }
 

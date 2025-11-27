@@ -84,31 +84,36 @@ async function executeClaudeAction(
       return 'screenshot_taken';
 
     case 'left_click': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       await executeComputerAction({ type: 'click', x, y, button: 'left' });
       return 'ok';
     }
 
     case 'right_click': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       await executeComputerAction({ type: 'click', x, y, button: 'right' });
       return 'ok';
     }
 
     case 'middle_click': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       await executeComputerAction({ type: 'click', x, y, button: 'middle' });
       return 'ok';
     }
 
     case 'double_click': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       await executeComputerAction({ type: 'double_click', x, y });
       return 'ok';
     }
 
     case 'triple_click': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       for (let i = 0; i < 3; i++) {
         await executeComputerAction({ type: 'click', x, y, button: 'left' });
         await sleep(50);
@@ -117,14 +122,16 @@ async function executeClaudeAction(
     }
 
     case 'mouse_move': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       await executeComputerAction({ type: 'move', x, y });
       return 'ok';
     }
 
     case 'left_click_drag': {
-      const start = scaleCoord(action.start_coordinate!, scale);
-      const end = scaleCoord(action.coordinate!, scale);
+      if (!action.start_coordinate || !action.coordinate) throw new Error('start_coordinate and coordinate required');
+      const start = scaleCoord(action.start_coordinate, scale);
+      const end = scaleCoord(action.coordinate, scale);
       await executeComputerAction({
         type: 'drag',
         startX: start.x,
@@ -136,18 +143,21 @@ async function executeClaudeAction(
     }
 
     case 'type': {
+      if (!action.text) throw new Error('text required');
       await executeComputerAction({ type: 'type', text: action.text });
       return 'ok';
     }
 
     case 'key': {
-      const keys = action.text!.split('+').map((k) => k.trim());
+      if (!action.text) throw new Error('text required');
+      const keys = action.text.split('+').map((k) => k.trim());
       await executeComputerAction({ type: 'keypress', keys });
       return 'ok';
     }
 
     case 'scroll': {
-      const { x, y } = scaleCoord(action.coordinate!, scale);
+      if (!action.coordinate) throw new Error('coordinate required');
+      const { x, y } = scaleCoord(action.coordinate, scale);
       const scrollAmount = (action.scroll_amount ?? 3) * 100;
       let scrollX = 0;
       let scrollY = 0;
@@ -176,7 +186,8 @@ async function executeClaudeAction(
     }
 
     case 'hold_key': {
-      const keys = action.text!.split('+').map((k) => k.trim());
+      if (!action.text) throw new Error('text required');
+      const keys = action.text.split('+').map((k) => k.trim());
       await executeComputerAction({ type: 'keypress', keys });
       return 'ok';
     }
@@ -192,31 +203,39 @@ function describeClaudeAction(action: ClaudeAction): string {
     case 'screenshot':
       return 'Taking screenshot';
     case 'left_click':
-      return `Click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.coordinate) return 'Click at (unknown)';
+      return `Click at (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'right_click':
-      return `Right-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.coordinate) return 'Right-click at (unknown)';
+      return `Right-click at (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'double_click':
-      return `Double-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.coordinate) return 'Double-click at (unknown)';
+      return `Double-click at (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'triple_click':
-      return `Triple-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.coordinate) return 'Triple-click at (unknown)';
+      return `Triple-click at (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'middle_click':
-      return `Middle-click at (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.coordinate) return 'Middle-click at (unknown)';
+      return `Middle-click at (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'mouse_move':
-      return `Move mouse to (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.coordinate) return 'Move mouse to (unknown)';
+      return `Move mouse to (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'left_click_drag':
-      return `Drag from (${action.start_coordinate![0]}, ${action.start_coordinate![1]}) to (${action.coordinate![0]}, ${action.coordinate![1]})`;
+      if (!action.start_coordinate || !action.coordinate) return 'Drag (unknown)';
+      return `Drag from (${action.start_coordinate[0]}, ${action.start_coordinate[1]}) to (${action.coordinate[0]}, ${action.coordinate[1]})`;
     case 'type': {
-      const text = action.text!.length > 30 ? action.text!.slice(0, 30) + '...' : action.text!;
+      if (!action.text) return 'Type (empty)';
+      const text = action.text.length > 30 ? action.text.slice(0, 30) + '...' : action.text;
       return `Type "${text}"`;
     }
     case 'key':
-      return `Press ${action.text}`;
+      return `Press ${action.text ?? 'unknown key'}`;
     case 'scroll':
-      return `Scroll ${action.scroll_direction} by ${action.scroll_amount}`;
+      return `Scroll ${action.scroll_direction ?? 'unknown'} by ${action.scroll_amount ?? 0}`;
     case 'wait':
       return 'Waiting';
     case 'hold_key':
-      return `Hold ${action.text}`;
+      return `Hold ${action.text ?? 'unknown key'}`;
     default:
       return 'Execute action';
   }

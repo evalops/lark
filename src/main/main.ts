@@ -38,7 +38,7 @@ let win: BrowserWindow | null = null;
 
 function createWindow(): void {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const windowWidth = 400;
+  const windowWidth = config.ui.windowWidth;
   const windowHeight = config.ui.pillBaseHeight;
 
   win = new BrowserWindow({
