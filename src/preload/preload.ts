@@ -16,6 +16,7 @@ const api = {
   getConstants: () => ipcRenderer.invoke('get-constants'),
   getConfigStatus: () => ipcRenderer.invoke('get-config-status'),
   saveApiKey: (apiKey: string) => ipcRenderer.invoke('save-api-key', apiKey),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
 };
 
 contextBridge.exposeInMainWorld('larkAPI', api);

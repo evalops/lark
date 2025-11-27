@@ -261,6 +261,51 @@ function simplifyAXTree(element: AXElement, depth = 0): any {
   return simplified;
 }
 
+function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
+  // Ensure tool_use blocks are always followed by tool_result blocks
+  // This prevents 400 errors from the API
+  
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      const hasToolUse = msg.content.some((block: any) => block.type === 'tool_use');
+      
+      if (hasToolUse) {
+        // Check if the next message is a user message with tool_result
+        const nextMsg = messages[i + 1];
+        
+        if (!nextMsg || nextMsg.role !== 'user') {
+          // Missing tool_result - remove this assistant message
+          messages.splice(i, 1);
+          logEvent('claude_removed_orphan_tool_use', { index: i });
+          continue;
+        }
+        
+        // Check if the user message has matching tool_results
+        if (Array.isArray(nextMsg.content)) {
+          const toolUseIds = msg.content
+            .filter((block: any) => block.type === 'tool_use')
+            .map((block: any) => block.id);
+          
+          const toolResultIds = nextMsg.content
+            .filter((block: any) => block.type === 'tool_result')
+            .map((block: any) => block.tool_use_id);
+          
+          const missingResults = toolUseIds.filter((id: string) => !toolResultIds.includes(id));
+          
+          if (missingResults.length > 0) {
+            // Some tool_use blocks don't have matching tool_results
+            // Remove both messages to reset to a clean state
+            messages.splice(i, 2);
+            logEvent('claude_removed_mismatched_tool_pair', { index: i, missingResults });
+          }
+        }
+      }
+    }
+  }
+}
+
 export async function processComputerUseClaude(
   client: ClaudeModelClient,
   prompt: string,
@@ -307,6 +352,9 @@ export async function processComputerUseClaude(
     logEvent('claude_step_start', { step });
     sendStatusUpdate(`Step ${step}: Thinking...`);
 
+    // Validate message history before sending to prevent 400 errors
+    validateAndRepairMessages(messages);
+
     let streamingText = '';
     const onStreamEvent = (event: StreamEvent): void => {
       if (event.type === 'text_delta' && event.text) {
@@ -346,6 +394,34 @@ export async function processComputerUseClaude(
       
       logError('claude_api_error', err as Error, errorDetails);
       console.error('Full Claude API Error:', JSON.stringify(apiError, null, 2));
+      
+      // Handle 400 errors - often caused by tool_use/tool_result mismatch
+      if (apiError.status === 400) {
+        const errorMessage = apiError.error?.message || apiError.message || '';
+        
+        // Check if the error is related to tool_use/tool_result pairing
+        if (errorMessage.includes('tool_use') || errorMessage.includes('tool_result')) {
+          logError('claude_tool_pairing_error', new Error('Tool use/result pairing issue detected'));
+          
+          // Prune corrupted messages: remove the last assistant message if it has unpaired tool_use
+          if (messages.length >= 2) {
+            const lastMessage = messages[messages.length - 1];
+            const secondLastMessage = messages[messages.length - 2];
+            
+            // If last message is assistant with tool_use, remove it (no matching tool_result followed)
+            if (secondLastMessage?.role === 'assistant') {
+              const content = secondLastMessage.content;
+              const hasToolUse = Array.isArray(content) && 
+                content.some((block: any) => block.type === 'tool_use');
+              
+              if (hasToolUse && lastMessage?.role !== 'user') {
+                messages.pop();
+                logEvent('claude_pruned_unpaired_tool_use', { messagesRemaining: messages.length });
+              }
+            }
+          }
+        }
+      }
       
       sendStatusUpdate(`API Error: ${String((err as Error)?.message || 'Unknown error')}`);
       await sleep(2000);

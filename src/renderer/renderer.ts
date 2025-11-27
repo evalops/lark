@@ -12,6 +12,7 @@ interface LarkAPI {
   getConstants: () => Promise<{ PILL_BASE_HEIGHT: number }>;
   getConfigStatus: () => Promise<{ needsApiKey: boolean; hasApiKey: boolean; provider: string }>;
   saveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
+  quitApp: () => Promise<void>;
 }
 
 interface Window {
@@ -102,6 +103,12 @@ async function sendPrompt(): Promise<void> {
   if (!prompt || isLoading) return;
 
   input.value = '';
+
+  if (prompt === '/quit') {
+    await window.larkAPI.quitApp();
+    return;
+  }
+
   setLoading(true);
 
   responseDiv.classList.remove('hidden');

@@ -79,7 +79,7 @@ export class ClaudeModelClient {
       cache_control: { type: 'ephemeral' },
     };
 
-    const stream = this.client.messages.stream({
+    const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: 1024,
       system: request.systemPrompt
@@ -87,8 +87,8 @@ export class ClaudeModelClient {
         : undefined,
       tools: [computerTool] as unknown as Anthropic.Tool[],
       messages: request.messages,
-      betas: [betaFlag],
-    } as unknown as Anthropic.MessageStreamParams, { signal: request.signal });
+      betas: [betaFlag, 'prompt-caching-2024-07-31'],
+    } as unknown as Anthropic.Messages.MessageStreamParams, { signal: request.signal });
 
     for await (const event of stream) {
       switch (event.type) {
@@ -135,8 +135,9 @@ export class ClaudeModelClient {
         }
       : undefined;
 
+    // Cast content to match the expected interface type, filtering out beta-specific tool blocks if necessary
     return {
-      content: finalMessage.content,
+      content: finalMessage.content as Anthropic.ContentBlock[],
       stopReason: finalMessage.stop_reason,
       usage,
     };

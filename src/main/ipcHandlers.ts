@@ -296,4 +296,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       return { success: false, error: String((err as Error)?.message || 'Failed to save API key') };
     }
   });
+
+  ipcMain.handle('quit-app', () => {
+    app.quit();
+  });
 }
