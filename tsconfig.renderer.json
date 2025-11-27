@@ -11,7 +11,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true,
-    "declaration": false
+    "declaration": false,
+    "moduleResolution": "node",
+    "types": ["vitest/globals"]
   },
   "include": ["src/renderer/**/*"],
   "exclude": ["node_modules"]

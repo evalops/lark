@@ -361,30 +361,43 @@ if (waveformContainer) {
     ctx.globalCompositeOperation = 'lighter';
 
     const midY = h / 2;
-    const baseAmp = Math.max(2, h * 0.28);
-    const speed = 0.05;
-    const freq = 2.5;
-    const ampMod = (Math.sin(t * 0.8) + 1) * 0.5;
+    const isActive = isLoading;
+    const baseAmp = isActive ? Math.max(6, h * 0.4) : Math.max(2, h * 0.28);
+    const speed = isActive ? 0.15 : 0.05;
+    
+    // Dynamic frequency modulation
+    const freq = 2.0; 
+    
+    // Breathing effect
+    const ampMod = (Math.sin(t * 0.5) + 1) * 0.5; // 0 to 1
     const amplitude = baseAmp * (0.6 + 0.4 * ampMod);
 
     const waves = [
-      { color: 'rgba(10,132,255,0.9)', phase: 0, width: 2.0 },
-      { color: 'rgba(255,55,95,0.75)', phase: Math.PI / 2, width: 1.8 },
-      { color: 'rgba(48,220,155,0.8)', phase: Math.PI, width: 1.8 },
+      { color: 'rgba(10,132,255,0.9)', phase: 0, width: 2.0, speedCtx: 1.0 },
+      { color: 'rgba(255,55,95,0.75)', phase: Math.PI / 2, width: 1.8, speedCtx: 1.2 },
+      { color: 'rgba(48,220,155,0.8)', phase: Math.PI, width: 1.8, speedCtx: 0.8 },
     ];
 
     for (const wave of waves) {
       ctx.beginPath();
-      const pad = 0.5;
+      const pad = 2;
       const xStart = pad;
       const xEnd = Math.max(pad, w - pad);
       let started = false;
 
-      for (let x = xStart; x <= xEnd; x++) {
+      // Draw the wave
+      for (let x = xStart; x <= xEnd; x += 1) { // Step by 1px for smoothness
         const normX = (x - xStart) / Math.max(1, xEnd - xStart);
-        const taper = Math.pow(Math.sin(normX * Math.PI), 1.1);
-        const y =
-          midY + Math.sin(normX * Math.PI * 2 * freq + t + wave.phase) * amplitude * taper;
+        
+        // Window function to taper ends (Hanning-like)
+        const taper = Math.pow(Math.sin(normX * Math.PI), 1.5);
+        
+        // Composite wave for organic feel
+        const mainWave = Math.sin(normX * Math.PI * 2 * freq + t * wave.speedCtx + wave.phase);
+        const secondaryWave = Math.sin(normX * Math.PI * 4 * freq + t * wave.speedCtx * 1.5 + wave.phase) * 0.3;
+        
+        const y = midY + (mainWave + secondaryWave) * amplitude * taper;
+
         if (!started) {
           ctx.moveTo(x, y);
           started = true;
