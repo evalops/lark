@@ -11,3 +11,9 @@ export function sendStatusUpdate(status: string): void {
     mainWindow.webContents.send('status-update', status);
   }
 }
+
+export function sendConfirmationRequest(request: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('confirmation-request', request);
+  }
+}

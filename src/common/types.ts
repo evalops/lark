@@ -2,7 +2,11 @@ export interface Config {
   model: { provider: 'claude' | 'gemini' };
   claude: { apiKey: string; model: string };
   gemini: { apiKey: string; model: string };
-  agent: { maxSteps: number; minStepDelayMs: number };
+  agent: { 
+    maxSteps: number; 
+    minStepDelayMs: number;
+    confirmDangerousActions: boolean;
+  };
   ui: {
     pillBaseHeight: number;
     maxPromptLength: number;
@@ -22,4 +26,3 @@ export interface Config {
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
-

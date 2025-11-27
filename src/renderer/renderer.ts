@@ -17,6 +17,8 @@ interface LarkAPI {
   quitApp: () => Promise<void>;
   getConfig: () => Promise<Config>;
   saveConfig: (updates: DeepPartial<Config>) => Promise<{ success: boolean; error?: string }>;
+  onConfirmationRequest: (callback: (request: string) => void) => void;
+  respondToConfirmation: (allowed: boolean) => Promise<void>;
 }
 
 declare global {
@@ -62,7 +64,13 @@ const settingProvider = must(document.getElementById('setting-provider') as HTML
 const settingModel = must(document.getElementById('setting-model') as HTMLSelectElement, 'setting-model');
 const settingMaxSteps = must(document.getElementById('setting-max-steps') as HTMLInputElement, 'setting-max-steps');
 const settingDelay = must(document.getElementById('setting-delay') as HTMLInputElement, 'setting-delay');
+const settingConfirmDangerous = must(document.getElementById('setting-confirm-dangerous') as HTMLInputElement, 'setting-confirm-dangerous');
 const settingApiKey = must(document.getElementById('setting-api-key') as HTMLInputElement, 'setting-api-key');
+
+const confirmationModal = must(document.getElementById('confirmation-modal'), 'confirmation-modal');
+const confirmationText = must(document.getElementById('confirmation-text'), 'confirmation-text');
+const confirmAllow = must(document.getElementById('confirm-allow') as HTMLButtonElement, 'confirm-allow');
+const confirmDeny = must(document.getElementById('confirm-deny') as HTMLButtonElement, 'confirm-deny');
 
 import { registerCommand, handleSlashCommand } from './slashCommands.js';
 
@@ -320,6 +328,7 @@ async function openSettings(): Promise<void> {
 
     settingMaxSteps.value = String(currentConfig.agent?.maxSteps || 1000);
     settingDelay.value = String(currentConfig.agent?.minStepDelayMs || 1000);
+    settingConfirmDangerous.checked = currentConfig.agent?.confirmDangerousActions ?? true;
     
     // Show modal
     pill.classList.add('showing-settings');
@@ -346,15 +355,11 @@ async function saveSettings(): Promise<void> {
     agent: {
       maxSteps: Number(settingMaxSteps.value),
       minStepDelayMs: Number(settingDelay.value),
+      confirmDangerousActions: settingConfirmDangerous.checked,
     },
   };
 
   // Update provider specific settings
-  // We also need to make sure we don't wipe out the *other* provider's key if we are saving
-  // But currently we only edit the active one. 
-  // The saveConfig in main merges deep or shallow? It seems to check individual fields in `saveUserConfig`.
-  // `saveUserConfig` checks `if (updates.claude?.apiKey !== undefined)`.
-  
   if (provider === 'claude') {
     updates.claude = {
       model: settingModel.value,
@@ -751,5 +756,27 @@ async function checkConfigStatus(): Promise<void> {
     console.error('Failed to check config status:', err);
   }
 }
+
+// Confirmation Logic
+if (window.larkAPI?.onConfirmationRequest) {
+  window.larkAPI.onConfirmationRequest((request) => {
+    confirmationText.textContent = request;
+    confirmationModal.classList.remove('hidden');
+    pill.classList.add('showing-settings'); // Reuse expanded state
+    pill.classList.remove('collapsed');
+    pill.classList.add('expanded');
+    requestAnimationFrame(() => fitWindowToPill());
+  });
+}
+
+function handleConfirmation(allowed: boolean) {
+  confirmationModal.classList.add('hidden');
+  pill.classList.remove('showing-settings');
+  setWindowBaseHeight();
+  window.larkAPI.respondToConfirmation(allowed);
+}
+
+confirmAllow.addEventListener('click', () => handleConfirmation(true));
+confirmDeny.addEventListener('click', () => handleConfirmation(false));
 
 checkConfigStatus();

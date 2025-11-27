@@ -105,6 +105,7 @@ function buildConfig(): Config {
     agent: {
       maxSteps: num(process.env.CUA_MAX_STEPS, 1000),
       minStepDelayMs: num(process.env.AGENT_MIN_STEP_DELAY_MS, 1000),
+      confirmDangerousActions: str(process.env.CONFIRM_DANGEROUS_ACTIONS, 'true') === 'true',
     },
     ui: {
       pillBaseHeight: num(process.env.PILL_BASE_HEIGHT, 60),
@@ -170,6 +171,7 @@ export function saveUserConfig(updates: DeepPartial<Config>): void {
   
   if (updates.agent?.maxSteps !== undefined) parsed.CUA_MAX_STEPS = String(updates.agent.maxSteps);
   if (updates.agent?.minStepDelayMs !== undefined) parsed.AGENT_MIN_STEP_DELAY_MS = String(updates.agent.minStepDelayMs);
+  if (updates.agent?.confirmDangerousActions !== undefined) parsed.CONFIRM_DANGEROUS_ACTIONS = String(updates.agent.confirmDangerousActions);
 
   // Ensure directory exists
   const dir = path.dirname(userEnvPath);

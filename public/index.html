@@ -50,6 +50,13 @@
           <label>Delay (ms)</label>
           <input id="setting-delay" type="number" min="0" step="100" />
         </div>
+
+        <div class="settings-section">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="setting-confirm-dangerous" />
+            <label for="setting-confirm-dangerous" style="margin-bottom: 0;">Confirm dangerous actions</label>
+          </div>
+        </div>
     
         <div class="settings-section">
           <label>API Key</label>
@@ -57,6 +64,19 @@
         </div>
     
         <button id="settings-save" class="full-width-btn">Save Changes</button>
+      </div>
+
+      <div id="confirmation-modal" class="settings-modal hidden">
+        <div class="settings-header">
+          <span>Confirm Action</span>
+        </div>
+        <div class="settings-section">
+          <p id="confirmation-text" style="margin: 10px 0; color: #ccc; font-size: 14px; line-height: 1.4;">Allow this action?</p>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <button id="confirm-deny" class="full-width-btn" style="background: #3a3a3c;">Deny</button>
+          <button id="confirm-allow" class="full-width-btn" style="background: #0A84FF;">Allow</button>
+        </div>
       </div>
 
       <div id="main-input" class="input-row">

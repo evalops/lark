@@ -1,10 +1,38 @@
 import { screen } from 'electron';
 import { captureBase64 } from '../screen';
 import { logEvent, logError } from '../log';
-import { sendStatusUpdate } from '../statusManager';
+import { sendStatusUpdate, sendConfirmationRequest } from '../statusManager';
 import { config } from '../config';
 import { executeComputerAction } from '../computerActions';
 import { IModelClient, DisplayInfo, StreamEvent } from './modelClient';
+
+let pendingConfirmationResolve: ((allowed: boolean) => void) | null = null;
+
+export function resolveConfirmation(allowed: boolean): void {
+  if (pendingConfirmationResolve) {
+    pendingConfirmationResolve(allowed);
+    pendingConfirmationResolve = null;
+  }
+}
+
+async function askUserConfirmation(description: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    pendingConfirmationResolve = resolve;
+    sendConfirmationRequest(description);
+  });
+}
+
+function isDangerousAction(action: ClaudeAction): boolean {
+  if (action.action !== 'key' && action.action !== 'hold_key') return false;
+  
+  const text = (action.text || '').toLowerCase();
+  const dangerousKeys = ['return', 'enter', 'delete', 'backspace'];
+  
+  // Check if any part of the key sequence involves a dangerous key
+  const keys = text.split('+').map(k => k.trim().toLowerCase());
+  return keys.some(k => dangerousKeys.includes(k));
+}
+
 import { getFrontmostAppUITree, AXElement } from './axClient';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -89,6 +117,14 @@ async function executeClaudeAction(
   display: DisplayInfo
 ): Promise<string> {
   const scale = display.screenshotScale;
+
+  if (config.agent.confirmDangerousActions && isDangerousAction(action)) {
+    const desc = describeClaudeAction(action);
+    const allowed = await askUserConfirmation(desc);
+    if (!allowed) {
+      return 'Action denied by user';
+    }
+  }
 
   switch (action.action) {
     case 'screenshot':

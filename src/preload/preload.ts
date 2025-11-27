@@ -20,6 +20,10 @@ const api = {
   quitApp: () => ipcRenderer.invoke('quit-app'),
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (updates: DeepPartial<Config>) => ipcRenderer.invoke('save-config', updates),
+  onConfirmationRequest: (callback: (request: string) => void) => {
+    ipcRenderer.on('confirmation-request', (_event, request) => callback(request));
+  },
+  respondToConfirmation: (allowed: boolean) => ipcRenderer.invoke('respond-to-confirmation', allowed),
 };
 
 contextBridge.exposeInMainWorld('larkAPI', api);

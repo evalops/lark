@@ -5,7 +5,7 @@ import fsp from 'fs/promises';
 import { mouse, keyboard, Point } from '@nut-tree-fork/nut-js';
 import { captureToFile } from './screen';
 import { logEvent, logError } from './log';
-import { processComputerUse } from './services/agent';
+import { processComputerUse, resolveConfirmation } from './services/agent';
 import { config, getUserEnvPath, refreshConfig, saveUserConfig, Config, DeepPartial } from './config';
 import { IModelClient } from './services/modelClient';
 import Anthropic from '@anthropic-ai/sdk';
@@ -333,5 +333,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('quit-app', () => {
     app.quit();
+  });
+
+  ipcMain.handle('respond-to-confirmation', (_event, allowed: unknown) => {
+    resolveConfirmation(!!allowed);
   });
 }
