@@ -566,7 +566,7 @@ export async function processComputerUse(
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
-              { type: 'text', text: result + uiContext },
+              { type: 'text', text: result },
               {
                 type: 'image',
                 source: { type: 'base64', media_type: 'image/jpeg', data: screenshotData },

@@ -1,6 +1,6 @@
 import { mouse, keyboard, Key, Button, Point } from '@nut-tree-fork/nut-js';
 import { logEvent, logError } from './log';
-import { showClickIndicator } from './cursorIndicator';
+import { showClickIndicator, showTrail } from './cursorIndicator';
 
 // Configure nut.js defaults
 keyboard.config.autoDelayMs = 10;
@@ -134,12 +134,16 @@ export interface ComputerAction {
 export async function executeComputerAction(action: ComputerAction): Promise<void> {
   const actionType = action.type;
   try {
+    // For visual feedback
+    const currentPos = await mouse.getPosition();
+
     switch (actionType) {
       case 'click': {
         const { x, y, button = 'left' } = action;
         logEvent('action_click', { x, y, button });
-        showClickIndicator(x!, y!);
+        showTrail(currentPos.x, currentPos.y, x!, y!);
         await mouse.setPosition(new Point(x!, y!));
+        showClickIndicator(x!, y!);
         await sleep(60);
         await mouse.click(
           button === 'left' ? Button.LEFT : button === 'right' ? Button.RIGHT : Button.MIDDLE
@@ -149,8 +153,9 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'double_click': {
         const { x, y } = action;
         logEvent('action_double_click', { x, y });
-        showClickIndicator(x!, y!);
+        showTrail(currentPos.x, currentPos.y, x!, y!);
         await mouse.setPosition(new Point(x!, y!));
+        showClickIndicator(x!, y!);
         await sleep(60);
         await mouse.doubleClick(Button.LEFT);
         break;
@@ -158,8 +163,9 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'right_click': {
         const { x, y } = action;
         logEvent('action_right_click', { x, y });
-        showClickIndicator(x!, y!);
+        showTrail(currentPos.x, currentPos.y, x!, y!);
         await mouse.setPosition(new Point(x!, y!));
+        showClickIndicator(x!, y!);
         await sleep(60);
         await mouse.click(Button.RIGHT);
         break;
@@ -167,12 +173,14 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'move': {
         const { x, y } = action;
         logEvent('action_move', { x, y });
+        showTrail(currentPos.x, currentPos.y, x!, y!);
         await mouse.setPosition(new Point(x!, y!));
         break;
       }
       case 'scroll': {
         const { x, y, scrollX = 0, scrollY = 0 } = action;
         logEvent('action_scroll', { x, y, scrollX, scrollY });
+        showTrail(currentPos.x, currentPos.y, x!, y!);
         await mouse.setPosition(new Point(x!, y!));
         if (scrollY > 0) await mouse.scrollDown(scrollY);
         else if (scrollY < 0) await mouse.scrollUp(Math.abs(scrollY));
@@ -228,20 +236,34 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'drag': {
         const { startX, startY, endX, endY } = action;
         logEvent('action_drag', { startX, startY, endX, endY });
+        showTrail(currentPos.x, currentPos.y, startX!, startY!);
         await mouse.setPosition(new Point(startX!, startY!));
         await sleep(250);
         await mouse.pressButton(Button.LEFT);
         logEvent('mouse_down', { x: startX, y: startY });
         await sleep(200);
+        
+        // Draw visual trail during drag?
+        // The loop below updates position incrementally.
+        // We can trigger small trails.
+        
         const dx = endX! - startX!;
         const dy = endY! - startY!;
         const distance = Math.sqrt(dx * dx + dy * dy);
         const steps = Math.max(20, Math.floor(distance / 20));
+        let prevX = startX!;
+        let prevY = startY!;
+        
         for (let i = 1; i <= steps; i++) {
           const t = i / steps;
           const x = Math.round(startX! + dx * t);
           const y = Math.round(startY! + dy * t);
+          
+          showTrail(prevX, prevY, x, y);
           await mouse.setPosition(new Point(x, y));
+          prevX = x;
+          prevY = y;
+          
           await sleep(25);
         }
         await sleep(200);

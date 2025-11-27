@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, Content, Part, GenerativeModel } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, Part, GenerativeModel, SchemaType, Schema, FunctionDeclarationSchema } from '@google/generative-ai';
 import { IModelClient, ComputerUseRequest, ComputerUseResponse, StreamEvent } from './modelClient';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -19,10 +19,10 @@ export class GeminiModelClient implements IModelClient {
               name: 'computer',
               description: 'Use a computer to achieve the goal.',
               parameters: {
-                type: 'OBJECT',
+                type: SchemaType.OBJECT,
                 properties: {
                   action: {
-                    type: 'STRING',
+                    type: SchemaType.STRING,
                     description: 'The action to perform (key, type, mouse_move, left_click, etc).',
                     enum: [
                       'key',
@@ -36,18 +36,18 @@ export class GeminiModelClient implements IModelClient {
                       'screenshot',
                       'cursor_position',
                     ],
-                  },
+                  } as Schema,
                   coordinate: {
-                    type: 'ARRAY',
+                    type: SchemaType.ARRAY,
                     description: '(x, y): The x and y coordinates to move the mouse to. Required for `mouse_move`, `left_click`, `right_click`, `middle_click`, `double_click`, `left_click_drag` (to), and `cursor_position` (to).',
                     items: {
-                      type: 'INTEGER',
+                      type: SchemaType.INTEGER,
                     },
-                  },
+                  } as Schema,
                   text: {
-                    type: 'STRING',
+                    type: SchemaType.STRING,
                     description: 'The text to type. Required for `type` and `key`.',
-                  },
+                  } as Schema,
                 },
                 required: ['action'],
               },
@@ -56,12 +56,12 @@ export class GeminiModelClient implements IModelClient {
               name: 'ask_user',
               description: 'Ask the user for clarity or additional information if you are stuck or need more details to complete the task.',
               parameters: {
-                type: 'OBJECT',
+                type: SchemaType.OBJECT,
                 properties: {
                   question: {
-                    type: 'STRING',
+                    type: SchemaType.STRING,
                     description: 'The question to ask the user',
-                  },
+                  } as Schema,
                 },
                 required: ['question'],
               },
@@ -101,42 +101,15 @@ export class GeminiModelClient implements IModelClient {
               },
             });
           } else if (block.type === 'tool_result') {
-            // tool_result needs to be mapped to a separate functionResponse part
-            // AND it needs to be in a 'function' role message or similar? 
-            // Gemini expects 'function' role for function responses or 'user' role with functionResponse parts?
-            // Actually, in Gemini 'user' role sends functionResponse.
-            
-            // Handle content of tool result
             let responseContent = {};
             if (typeof block.content === 'string') {
                responseContent = { output: block.content };
             } else if (Array.isArray(block.content)) {
-               // If there are images in tool result, they usually go as separate parts or we just send text?
-               // Gemini functionResponse args are object. We might need to simplify.
-               // For screenshot tool, we usually return "screenshot_taken" text and the image is sent in the *next* user message?
-               // Or can functionResponse contain image?
-               // The harness logic sends image in the NEXT user message usually.
-               
-               // Let's look at how the agent loop works. 
-               // The agent loop creates a user message with tool_results.
-               // For Gemini, we map tool_result to functionResponse.
-               
                const textPart = block.content.find(c => c.type === 'text');
-               const imagePart = block.content.find(c => c.type === 'image');
                
                responseContent = { 
                  output: textPart?.type === 'text' ? textPart.text : '',
-                 // We can't easily put the image inside the functionResponse in Gemini API typically.
-                 // Usually we send the image as a separate 'user' part or in the next turn.
-                 // But wait, the harness sends `tool_results` which contains both.
                };
-               
-               // If there is an image, we should add it as a separate part in the same message if possible
-               if (imagePart?.type === 'image' && imagePart.source.type === 'base64') {
-                  // This is tricky. Gemini expects functionResponse to just be the result object.
-                  // Images are usually sent as 'user' parts.
-                  // We might need to split this into functionResponse part AND image part.
-               }
             }
 
             parts.push({
@@ -162,10 +135,6 @@ export class GeminiModelClient implements IModelClient {
     onEvent?: (event: StreamEvent) => void
   ): Promise<ComputerUseResponse> {
     
-    // We need to construct the full history including the system prompt?
-    // Gemini allows systemInstruction at model init or generate call.
-    // We'll use systemInstruction in generate call if supported, or prepend to history.
-    
     // Convert messages
     const contents = this.mapAnthropicToGemini(request.messages);
     
@@ -173,6 +142,7 @@ export class GeminiModelClient implements IModelClient {
     let systemInstruction = undefined;
     if (request.systemPrompt) {
       systemInstruction = {
+        role: 'user', // System instructions behave like a user prompt in some contexts, but API expects parts
         parts: [{ text: request.systemPrompt }]
       };
     }
@@ -213,8 +183,12 @@ export class GeminiModelClient implements IModelClient {
       if (accumulatedText) {
         finalContent.unshift({
           type: 'text',
-          text: accumulatedText
-        });
+          text: accumulatedText,
+          citations: null // Explicitly null to match interface
+        } as any); // Use any or ensure ContentBlock type match. 
+                   // Anthropic's TextBlock doesn't strictly require citations on *creation* usually,
+                   // but strict typing might be complaining.
+                   // Let's cast to unknown or just include citations: null
       }
 
       return {
@@ -232,4 +206,3 @@ export class GeminiModelClient implements IModelClient {
     }
   }
 }
-

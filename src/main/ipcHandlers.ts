@@ -101,7 +101,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
                 role: 'user',
                 content: [{
                   type: 'tool_result',
-                  tool_use_id: toolUse.id,
+                  tool_use_id: (toolUse as any).id || 'resume_id', 
                   content: safePrompt
                 }]
               });
