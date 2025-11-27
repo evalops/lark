@@ -453,8 +453,6 @@ export async function processComputerUseClaude(
           // Anthropic needs the full context history. However, we can ensure we don't keep *duplicate* copies.
         }
       } catch (err) {
-        }
-      } catch (err) {
         logError('claude_action_error', err as Error);
         toolResults.push({
           type: 'tool_result',
