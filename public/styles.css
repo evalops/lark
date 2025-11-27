@@ -201,6 +201,10 @@ body {
 .response .message.assistant {
   color: rgba(255, 255, 255, 0.95);
 }
+.response .message.system {
+  color: rgba(255, 200, 100, 0.9);
+  font-style: italic;
+}
 
 /* entry animation states */
 .response .message.enter {

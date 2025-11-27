@@ -17,8 +17,10 @@ interface LarkAPI {
   saveConfig: (updates: any) => Promise<{ success: boolean; error?: string }>;
 }
 
-interface Window {
-  larkAPI: LarkAPI;
+declare global {
+  interface Window {
+    larkAPI: LarkAPI;
+  }
 }
 
 let PILL_BASE_HEIGHT = window.larkAPI?.constants?.PILL_BASE_HEIGHT ?? 60;
@@ -58,6 +60,25 @@ const settingModel = must(document.getElementById('setting-model') as HTMLSelect
 const settingMaxSteps = must(document.getElementById('setting-max-steps') as HTMLInputElement, 'setting-max-steps');
 const settingDelay = must(document.getElementById('setting-delay') as HTMLInputElement, 'setting-delay');
 const settingApiKey = must(document.getElementById('setting-api-key') as HTMLInputElement, 'setting-api-key');
+
+import { registerCommand, handleSlashCommand } from './slashCommands.js';
+
+// Register default commands
+registerCommand('/quit', async () => {
+  await window.larkAPI.quitApp();
+}, 'Quit the application');
+
+registerCommand('/clear', async () => {
+  try {
+    await window.larkAPI.clearHistory();
+  } catch (err) {
+    console.error('Failed to clear history:', err);
+  }
+  responseDiv.innerHTML = '';
+  setShowingResponse(false);
+  setWindowBaseHeight();
+  updateSendButtonAppearance();
+}, 'Clear chat history');
 
 let isLoading = false;
 let showingResponse = false;
@@ -123,9 +144,12 @@ async function sendPrompt(): Promise<void> {
 
   input.value = '';
 
-  if (prompt === '/quit') {
-    await window.larkAPI.quitApp();
-    return;
+  if (prompt.startsWith('/')) {
+    const handled = await handleSlashCommand(prompt, (err) => {
+      console.error(`Error executing command ${prompt}:`, err);
+      appendMessage('system', `Error executing command: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    if (handled) return;
   }
 
   setLoading(true);
