@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 type BetaComputerToolParam = {
-  type: 'computer_20250124';
+  type: 'computer_20241022' | 'computer_20250124' | 'computer_20251124';
   name: 'computer';
   display_width_px: number;
   display_height_px: number;
@@ -59,8 +59,20 @@ export class ClaudeModelClient {
   ): Promise<ComputerUseResponse> {
     let currentBlockIndex = -1;
 
+    // Determine tool version and beta flag based on model
+    let toolType: BetaComputerToolParam['type'] = 'computer_20241022';
+    let betaFlag = 'computer-use-2024-10-22';
+
+    if (this.model.includes('opus-4-5')) {
+      toolType = 'computer_20251124';
+      betaFlag = 'computer-use-2025-11-24';
+    } else if (this.model.includes('claude-4') || this.model.includes('sonnet-3-7')) {
+      toolType = 'computer_20250124';
+      betaFlag = 'computer-use-2025-01-24';
+    }
+
     const computerTool: BetaComputerToolParam = {
-      type: 'computer_20250124',
+      type: toolType,
       name: 'computer',
       display_width_px: request.display.width,
       display_height_px: request.display.height,
@@ -75,7 +87,7 @@ export class ClaudeModelClient {
         : undefined,
       tools: [computerTool] as unknown as Anthropic.Tool[],
       messages: request.messages,
-      betas: ['computer-use-2025-01-24'],
+      betas: [betaFlag],
     } as unknown as Anthropic.MessageStreamParams, { signal: request.signal });
 
     for await (const event of stream) {
