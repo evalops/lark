@@ -352,6 +352,12 @@ if (waveformContainer) {
   pill.addEventListener('mouseleave', resizeCanvas);
 
   let t = 0;
+  let typingEnergy = 0; // decays over time
+  
+  // Hook into input to add energy
+  input.addEventListener('input', () => {
+    typingEnergy = Math.min(typingEnergy + 0.5, 2.0);
+  });
 
   function draw(): void {
     if (!ctx) return;
@@ -360,17 +366,23 @@ if (waveformContainer) {
     ctx.clearRect(0, 0, w, h);
     ctx.globalCompositeOperation = 'lighter';
 
+    // Decay typing energy
+    typingEnergy *= 0.92;
+    if (typingEnergy < 0.01) typingEnergy = 0;
+
     const midY = h / 2;
     const isActive = isLoading;
     const baseAmp = isActive ? Math.max(6, h * 0.4) : Math.max(2, h * 0.28);
     const speed = isActive ? 0.15 : 0.05;
     
     // Dynamic frequency modulation
-    const freq = 2.0; 
+    const freq = 2.0 + (typingEnergy * 0.5); 
     
-    // Breathing effect
+    // Breathing effect + typing reaction
     const ampMod = (Math.sin(t * 0.5) + 1) * 0.5; // 0 to 1
-    const amplitude = baseAmp * (0.6 + 0.4 * ampMod);
+    // boost amplitude when typing
+    const typingBoost = typingEnergy * 3.0;
+    const amplitude = baseAmp * (0.6 + 0.4 * ampMod) + typingBoost;
 
     const waves = [
       { color: 'rgba(10,132,255,0.9)', phase: 0, width: 2.0, speedCtx: 1.0 },
@@ -397,12 +409,15 @@ if (waveformContainer) {
         const secondaryWave = Math.sin(normX * Math.PI * 4 * freq + t * wave.speedCtx * 1.5 + wave.phase) * 0.3;
         
         const y = midY + (mainWave + secondaryWave) * amplitude * taper;
+        
+        // Add typing noise
+        const noise = (Math.random() - 0.5) * typingEnergy * 4;
 
         if (!started) {
-          ctx.moveTo(x, y);
+          ctx.moveTo(x, y + noise);
           started = true;
         } else {
-          ctx.lineTo(x, y);
+          ctx.lineTo(x, y + noise);
         }
       }
 
