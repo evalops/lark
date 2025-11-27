@@ -24,6 +24,7 @@ interface LarkAPI {
 declare global {
   interface Window {
     larkAPI: LarkAPI;
+    webkitSpeechRecognition: any;
   }
 }
 
@@ -37,6 +38,7 @@ function must<T extends HTMLElement>(v: T | null, id: string): T {
 const pill = must(document.getElementById('pill'), 'pill');
 const input = must(document.getElementById('prompt') as HTMLInputElement, 'prompt');
 const loader = must(document.getElementById('loader'), 'loader');
+const micButton = must(document.getElementById('mic-button') as HTMLButtonElement, 'mic-button');
 const sendButton = must(document.getElementById('send') as HTMLButtonElement, 'send');
 const waveformContainer = document.getElementById('waveform');
 const responseDiv = must(document.getElementById('response'), 'response');
@@ -253,6 +255,66 @@ sendButton.addEventListener('click', async () => {
     setShowingResponse(false);
     setWindowBaseHeight();
     updateSendButtonAppearance();
+  }
+});
+
+// Speech Recognition
+let recognition: any = null;
+let isRecording = false;
+
+function setupSpeechRecognition() {
+  if ('webkitSpeechRecognition' in window) {
+    const SpeechRecognition = window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      isRecording = true;
+      micButton.classList.add('recording');
+      input.placeholder = 'Listening...';
+    };
+
+    recognition.onend = () => {
+      isRecording = false;
+      micButton.classList.remove('recording');
+      if (!input.value) {
+        input.placeholder = 'Ask me to control your computer...';
+      }
+    };
+
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const transcript = event.results[i][0].transcript;
+          const val = input.value.trim();
+          input.value = val ? val + ' ' + transcript : transcript;
+          input.dispatchEvent(new Event('input')); // Trigger updateSendButtonAppearance
+          input.scrollLeft = input.scrollWidth;
+        }
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error', event.error);
+      isRecording = false;
+      micButton.classList.remove('recording');
+      input.placeholder = 'Error listening';
+    };
+  } else {
+    micButton.style.display = 'none';
+  }
+}
+
+setupSpeechRecognition();
+
+micButton.addEventListener('click', () => {
+  if (!recognition) return;
+
+  if (isRecording) {
+    recognition.stop();
+  } else {
+    recognition.start();
   }
 });
 

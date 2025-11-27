@@ -38,7 +38,10 @@
       "target": "dmg",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Lark needs access to your microphone for voice commands."
+      }
     },
     "files": [
       "dist/main/**/*",
