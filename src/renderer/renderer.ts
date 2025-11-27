@@ -343,6 +343,16 @@ pill.addEventListener('transitionend', (e) => {
   }
 });
 
+function pruneHistory(limit = 100): void {
+  const messages = Array.from(responseDiv.querySelectorAll('.message'));
+  if (messages.length > limit) {
+    const toRemove = messages.length - limit;
+    for (let i = 0; i < toRemove; i++) {
+      messages[i].remove();
+    }
+  }
+}
+
 function appendMessage(
   role: string,
   content: string,
@@ -352,6 +362,9 @@ function appendMessage(
   el.className = `message ${role} enter`;
   el.textContent = content;
   responseDiv.appendChild(el);
+  
+  // Prune history to keep DOM light
+  pruneHistory();
 
   const doFromInput = !!opts.fromInput;
   if (doFromInput) {

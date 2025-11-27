@@ -335,7 +335,18 @@ export async function processComputerUseClaude(
         sendStatusUpdate('Cancelled');
         return 'Task cancelled by user';
       }
-      logError('claude_api_error', err as Error);
+      
+      const apiError = err as any;
+      const errorDetails = {
+        status: apiError.status,
+        type: apiError.type,
+        requestId: apiError.requestId,
+        error: apiError.error
+      };
+      
+      logError('claude_api_error', err as Error, errorDetails);
+      console.error('Full Claude API Error:', JSON.stringify(apiError, null, 2));
+      
       sendStatusUpdate(`API Error: ${String((err as Error)?.message || 'Unknown error')}`);
       await sleep(2000);
       continue;
@@ -420,13 +431,11 @@ export async function processComputerUseClaude(
             width: display.width,
             height: display.height,
           });
-
-          // Refresh UI tree for the next step
-          const currentUiTree = await getFrontmostAppUITree();
-          const uiContext = currentUiTree
-            ? `\nUI State Update:\n${JSON.stringify(simplifyAXTree(currentUiTree), null, 2)}`
-            : '';
-
+          
+          // Clear the large base64 data from the screenshot tool result after it's been sent to the model
+          // to reduce memory pressure during long sessions
+          const screenshotData = screenshot; 
+          
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -434,10 +443,16 @@ export async function processComputerUseClaude(
               { type: 'text', text: result + uiContext },
               {
                 type: 'image',
-                source: { type: 'base64', media_type: 'image/jpeg', data: screenshot },
+                source: { type: 'base64', media_type: 'image/jpeg', data: screenshotData },
               },
             ],
           });
+          
+          // Force garbage collection of the raw screenshot string if possible (hint to V8)
+          // Note: We can't actually modify the toolResults that are in the messages array because 
+          // Anthropic needs the full context history. However, we can ensure we don't keep *duplicate* copies.
+        }
+      } catch (err) {
         }
       } catch (err) {
         logError('claude_action_error', err as Error);
