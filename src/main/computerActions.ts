@@ -2,6 +2,12 @@ import { mouse, keyboard, Key, Button, Point } from '@nut-tree-fork/nut-js';
 import { logEvent, logError } from './log';
 import { showClickIndicator } from './cursorIndicator';
 
+// Configure nut.js defaults
+keyboard.config.autoDelayMs = 10;
+mouse.config.autoDelayMs = 10;
+mouse.config.mouseSpeed = 1000; // instant speed for movement as we manage it
+
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -46,7 +52,7 @@ async function pressAndReleaseKey(target: string, modifiers: Key[] = []): Promis
   if (mappedKey) {
     await keyboard.pressKey(...modifiers, mappedKey);
     if (arrowKeys.has(mappedKey) && modifiers.length === 0) {
-      await sleep(500);
+      await sleep(100);
       await keyboard.releaseKey(...modifiers, mappedKey);
       await sleep(50);
     } else {
@@ -224,8 +230,6 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
         logEvent('action_drag', { startX, startY, endX, endY });
         await mouse.setPosition(new Point(startX!, startY!));
         await sleep(250);
-        await mouse.click(Button.LEFT);
-        await sleep(80);
         await mouse.pressButton(Button.LEFT);
         logEvent('mouse_down', { x: startX, y: startY });
         await sleep(200);

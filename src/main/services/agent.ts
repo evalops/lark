@@ -5,6 +5,7 @@ import { sendStatusUpdate } from '../statusManager';
 import { config } from '../config';
 import { executeComputerAction } from '../computerActions';
 import { ClaudeModelClient, DisplayInfo, StreamEvent } from './modelClient';
+import { getFrontmostAppUITree, AXElement } from './axClient';
 import Anthropic from '@anthropic-ai/sdk';
 
 const SCREENSHOT_WIDTH = 1280;
@@ -241,6 +242,25 @@ function describeClaudeAction(action: ClaudeAction): string {
   }
 }
 
+function simplifyAXTree(element: AXElement, depth = 0): any {
+  if (depth > 5) return '...'; // Prune deep trees
+
+  const simplified: any = {
+    role: element.role,
+    title: element.title,
+  };
+
+  if (element.frame) {
+    simplified.frame = element.frame;
+  }
+
+  if (element.children && element.children.length > 0) {
+    simplified.children = element.children.map((child) => simplifyAXTree(child, depth + 1));
+  }
+
+  return simplified;
+}
+
 export async function processComputerUseClaude(
   client: ClaudeModelClient,
   prompt: string,
@@ -259,12 +279,17 @@ export async function processComputerUseClaude(
     height: display.height,
   });
 
+  const uiTree = await getFrontmostAppUITree();
+  const uiContext = uiTree
+    ? `\n\nActive Window UI Structure:\n${JSON.stringify(simplifyAXTree(uiTree), null, 2)}`
+    : '';
+
   messages.push({
     role: 'user',
     content: [
       {
         type: 'text',
-        text: `Task: ${prompt}\n\nHere is the current screen. Use the computer tool to complete this task.`,
+        text: `Task: ${prompt}${uiContext}\n\nHere is the current screen. Use the computer tool to complete this task.`,
       },
       {
         type: 'image',
@@ -395,11 +420,18 @@ export async function processComputerUseClaude(
             width: display.width,
             height: display.height,
           });
+
+          // Refresh UI tree for the next step
+          const currentUiTree = await getFrontmostAppUITree();
+          const uiContext = currentUiTree
+            ? `\nUI State Update:\n${JSON.stringify(simplifyAXTree(currentUiTree), null, 2)}`
+            : '';
+
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
-              { type: 'text', text: result },
+              { type: 'text', text: result + uiContext },
               {
                 type: 'image',
                 source: { type: 'base64', media_type: 'image/jpeg', data: screenshot },

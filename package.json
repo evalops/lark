@@ -7,7 +7,9 @@
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "npm run build && electron .",
-    "build": "tsc && tsc -p tsconfig.renderer.json",
+    "build": "npm run build:native && tsc && tsc -p tsconfig.renderer.json",
+    "build:native": "swiftc native/AXDumper.swift -o native/axdumper",
+    "prepackage": "npm run build",
     "start": "electron .",
     "package": "electron-builder --mac",
     "lint": "eslint src --ext .ts"
@@ -45,6 +47,10 @@
       {
         "from": "packaging/runtime/default.env",
         "to": "default.env"
+      },
+      {
+        "from": "native/axdumper",
+        "to": "axdumper"
       }
     ]
   }
