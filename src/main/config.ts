@@ -152,3 +152,40 @@ export function validateConfig(): string[] {
   if (!config.claude.model) errors.push('CLAUDE_MODEL is not set');
   return errors;
 }
+
+export function saveUserConfig(updates: Partial<Config>): void {
+  const userEnvPath = getUserEnvPath();
+  let envContent = '';
+
+  if (fs.existsSync(userEnvPath)) {
+    envContent = fs.readFileSync(userEnvPath, 'utf8');
+  }
+
+  const parsed = dotenv.parse(envContent);
+
+  // Update values
+  if (updates.claude?.apiKey !== undefined) parsed.ANTHROPIC_API_KEY = updates.claude.apiKey;
+  if (updates.claude?.model !== undefined) parsed.CLAUDE_MODEL = updates.claude.model;
+  if (updates.agent?.maxSteps !== undefined) parsed.CUA_MAX_STEPS = String(updates.agent.maxSteps);
+  if (updates.agent?.minStepDelayMs !== undefined) parsed.AGENT_MIN_STEP_DELAY_MS = String(updates.agent.minStepDelayMs);
+
+  // Ensure directory exists
+  const dir = path.dirname(userEnvPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Write back
+  const newContent = Object.entries(parsed)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+  
+  fs.writeFileSync(userEnvPath, newContent);
+  
+  // Update current process.env so refreshConfig picks it up
+  Object.entries(parsed).forEach(([key, value]) => {
+    process.env[key] = value;
+  });
+
+  refreshConfig();
+}

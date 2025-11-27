@@ -13,6 +13,8 @@ interface LarkAPI {
   getConfigStatus: () => Promise<{ needsApiKey: boolean; hasApiKey: boolean; provider: string }>;
   saveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
   quitApp: () => Promise<void>;
+  getConfig: () => Promise<any>;
+  saveConfig: (updates: any) => Promise<{ success: boolean; error?: string }>;
 }
 
 interface Window {
@@ -46,6 +48,17 @@ const apiKeyError = must(document.getElementById('api-key-error'), 'api-key-erro
 const providerName = must(document.getElementById('provider-name'), 'provider-name');
 const mainInput = must(document.getElementById('main-input'), 'main-input');
 
+// Settings Elements
+const settingsToggle = must(document.getElementById('settings-toggle') as HTMLButtonElement, 'settings-toggle');
+const settingsModal = must(document.getElementById('settings-modal'), 'settings-modal');
+const settingsClose = must(document.getElementById('settings-close') as HTMLButtonElement, 'settings-close');
+const settingsSave = must(document.getElementById('settings-save') as HTMLButtonElement, 'settings-save');
+
+const settingModel = must(document.getElementById('setting-model') as HTMLSelectElement, 'setting-model');
+const settingMaxSteps = must(document.getElementById('setting-max-steps') as HTMLInputElement, 'setting-max-steps');
+const settingDelay = must(document.getElementById('setting-delay') as HTMLInputElement, 'setting-delay');
+const settingApiKey = must(document.getElementById('setting-api-key') as HTMLInputElement, 'setting-api-key');
+
 let isLoading = false;
 let showingResponse = false;
 
@@ -74,17 +87,23 @@ const CLEAR_X_SVG =
 pill.classList.add('collapsed');
 
 pill.addEventListener('mouseenter', () => {
+  if (pill.classList.contains('showing-settings')) return;
   pill.classList.remove('collapsed');
   pill.classList.add('expanded');
   setTimeout(() => {
-    input.focus();
+    if (!pill.classList.contains('showing-settings')) input.focus();
   }, 300);
   requestAnimationFrame(() => fitWindowToPill());
   updateSendButtonAppearance();
 });
 
 pill.addEventListener('mouseleave', () => {
-  const shouldCollapse = (!input.value.trim() || showingResponse) && !isLoading;
+  const shouldCollapse = 
+    (!input.value.trim() || showingResponse) && 
+    !isLoading && 
+    !pill.classList.contains('showing-settings') &&
+    !pill.classList.contains('needs-api-key');
+
   if (shouldCollapse) {
     pill.classList.add('collapsed');
     pill.classList.remove('expanded');
@@ -211,6 +230,70 @@ input.addEventListener('focus', () => {
 input.addEventListener('input', () => {
   updateSendButtonAppearance();
 });
+
+// Settings Logic
+async function openSettings(): Promise<void> {
+  try {
+    const config = await window.larkAPI.getConfig();
+    
+    // Populate fields
+    settingModel.value = config.claude?.model || 'claude-opus-4-5-20251101';
+    settingMaxSteps.value = String(config.agent?.maxSteps || 1000);
+    settingDelay.value = String(config.agent?.minStepDelayMs || 1000);
+    settingApiKey.value = config.claude?.apiKey || '';
+    
+    // Show modal
+    pill.classList.add('showing-settings');
+    pill.classList.remove('collapsed');
+    pill.classList.add('expanded');
+    settingsModal.classList.remove('hidden');
+    requestAnimationFrame(() => fitWindowToPill());
+  } catch (err) {
+    console.error('Failed to load settings:', err);
+  }
+}
+
+function closeSettings(): void {
+  pill.classList.remove('showing-settings');
+  settingsModal.classList.add('hidden');
+  input.focus();
+  setWindowBaseHeight();
+}
+
+async function saveSettings(): Promise<void> {
+  const updates = {
+    claude: {
+      model: settingModel.value,
+      apiKey: settingApiKey.value,
+    },
+    agent: {
+      maxSteps: Number(settingMaxSteps.value),
+      minStepDelayMs: Number(settingDelay.value),
+    },
+  };
+
+  settingsSave.disabled = true;
+  settingsSave.textContent = 'Saving...';
+
+  try {
+    const res = await window.larkAPI.saveConfig(updates);
+    if (res.success) {
+      closeSettings();
+    } else {
+      alert('Failed to save settings: ' + res.error);
+    }
+  } catch (err) {
+    console.error('Error saving settings:', err);
+    alert('Error saving settings');
+  } finally {
+    settingsSave.disabled = false;
+    settingsSave.textContent = 'Save Changes';
+  }
+}
+
+settingsToggle.addEventListener('click', openSettings);
+settingsClose.addEventListener('click', closeSettings);
+settingsSave.addEventListener('click', saveSettings);
 
 // Waveform animation
 if (waveformContainer) {

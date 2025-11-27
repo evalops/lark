@@ -243,19 +243,34 @@ function describeClaudeAction(action: ClaudeAction): string {
 }
 
 function simplifyAXTree(element: AXElement, depth = 0): any {
-  if (depth > 5) return '...'; // Prune deep trees
+  if (depth > 6) return '...'; // Prune deep trees
 
   const simplified: any = {
     role: element.role,
     title: element.title,
   };
 
+  if (element.value) {
+    simplified.value = element.value;
+  }
+  
+  if (element.description) {
+    simplified.description = element.description;
+  }
+
   if (element.frame) {
     simplified.frame = element.frame;
   }
 
+  // Filter children to remove non-interactive layout containers unless they have relevant content
   if (element.children && element.children.length > 0) {
-    simplified.children = element.children.map((child) => simplifyAXTree(child, depth + 1));
+    const children = element.children
+      .map((child) => simplifyAXTree(child, depth + 1))
+      .filter(child => child !== '...');
+      
+    if (children.length > 0) {
+      simplified.children = children;
+    }
   }
 
   return simplified;

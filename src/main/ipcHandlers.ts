@@ -6,7 +6,7 @@ import { mouse, keyboard, Point } from '@nut-tree-fork/nut-js';
 import { captureToFile } from './screen';
 import { logEvent, logError } from './log';
 import { processComputerUseClaude } from './services/agent';
-import { config, getUserEnvPath, refreshConfig } from './config';
+import { config, getUserEnvPath, refreshConfig, saveUserConfig, Config } from './config';
 import { ClaudeModelClient } from './services/modelClient';
 
 interface HistoryMessage {
@@ -236,7 +236,25 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     return { provider, needsApiKey, hasApiKey };
   });
 
-  // Save API key
+  // Get full config
+  ipcMain.handle('get-config', async () => {
+    return config;
+  });
+
+  // Save config
+  ipcMain.handle('save-config', async (_, updates: unknown) => {
+    try {
+      const newConfig = updates as Partial<Config>;
+      saveUserConfig(newConfig);
+      ctx.initializeModelClient();
+      return { success: true };
+    } catch (err) {
+      logError('save_config_error', err as Error);
+      return { success: false, error: String((err as Error).message) };
+    }
+  });
+
+  // Save API key (Legacy/Specific wrapper)
   ipcMain.handle('save-api-key', async (_event, apiKey: unknown) => {
     try {
       const key = typeof apiKey === 'string' ? apiKey.trim() : '';
@@ -248,48 +266,10 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Invalid key format. Anthropic keys start with sk-ant-' };
       }
 
-      const envVarName = 'ANTHROPIC_API_KEY';
-      const provider = 'claude';
-
-      const userEnvPath = getUserEnvPath();
-      let content = '';
-      try {
-        await fsp.mkdir(path.dirname(userEnvPath), { recursive: true });
-        if (fs.existsSync(userEnvPath)) {
-          content = await fsp.readFile(userEnvPath, 'utf8');
-        }
-      } catch {
-        // ignore
-      }
-
-      const lines = content.split('\n');
-      let found = false;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith(`${envVarName}=`)) {
-          lines[i] = `${envVarName}=${key}`;
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        const hasProvider = lines.some((l) => l.startsWith('MODEL_PROVIDER='));
-        if (!hasProvider) {
-          lines.unshift(`MODEL_PROVIDER=${provider}`);
-        }
-        lines.push(`${envVarName}=${key}`);
-      }
-
-      await fsp.writeFile(
-        userEnvPath,
-        lines.filter((l, idx) => l.trim() !== '' || idx === lines.length - 1).join('\n') + '\n'
-      );
-
-      process.env[envVarName] = key;
-      refreshConfig();
+      saveUserConfig({ claude: { apiKey: key, model: config.claude.model } });
       ctx.initializeModelClient();
 
-      logEvent('api_key_saved', { provider });
+      logEvent('api_key_saved', { provider: 'claude' });
       return { success: true };
     } catch (err) {
       logError('save_api_key_error', err as Error);

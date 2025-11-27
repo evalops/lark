@@ -47,6 +47,12 @@ func dumpElement(_ element: AXUIElement, depth: Int = 0) -> [String: Any]? {
     if let title = getAttribute(element, kAXTitleAttribute) as? String, !title.isEmpty {
         info["title"] = title
     }
+    if let val = getAttribute(element, kAXValueAttribute), let strVal = val as? String, !strVal.isEmpty {
+        info["value"] = strVal
+    }
+    if let desc = getAttribute(element, kAXDescriptionAttribute) as? String, !desc.isEmpty {
+        info["description"] = desc
+    }
     if let frame = getAttribute(element, "AXFrame") as? [String: CGFloat] {
         info["frame"] = frame
     }
@@ -80,4 +86,3 @@ if result == .success {
 } else {
     print("{\"error\": \"Could not get focused application. Check permissions.\"}")
 }
-

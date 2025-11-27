@@ -31,7 +31,7 @@ body {
   /* Only hide vertical overflow so waveform can overflow horizontally if needed */
   overflow-y: hidden; /* animate expansion upward */
   overflow-x: visible;
-  cursor: pointer;
+  cursor: default;
 }
 
 #pill:hover,
@@ -45,6 +45,7 @@ body {
 #pill.collapsed {
   width: 120px;
   max-height: 32px;
+  cursor: pointer;
 }
 
 #pill.collapsed::before {
@@ -52,7 +53,8 @@ body {
 }
 
 #pill.collapsed #prompt,
-#pill.collapsed .input-row {
+#pill.collapsed .input-row,
+#pill.collapsed .settings-modal {
   display: none;
 }
 
@@ -109,7 +111,7 @@ body {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .loader {
@@ -321,3 +323,108 @@ body {
   display: none;
 }
 
+/* Settings Modal */
+.settings-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-modal.hidden {
+  display: none;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-section label {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settings-section input,
+.settings-section select {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: white;
+  font-size: 13px;
+  outline: none;
+}
+
+.settings-section input:focus,
+.settings-section select:focus {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.full-width-btn {
+  width: 100%;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.full-width-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Add settings button to input row */
+.settings-btn {
+  margin-right: 8px;
+}
+
+/* Expand for settings */
+#pill.showing-settings {
+  width: 300px;
+  max-height: 420px;
+}
+
+#pill.showing-settings .settings-modal {
+  display: flex;
+}
+
+#pill.showing-settings #main-input,
+#pill.showing-settings .response {
+  display: none !important;
+}

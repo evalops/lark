@@ -15,6 +15,8 @@ function getHelperPath(): string {
 export interface AXElement {
   role?: string;
   title?: string;
+  value?: string;
+  description?: string;
   frame?: { x: number; y: number; width: number; height: number };
   children?: AXElement[];
 }
@@ -63,4 +65,3 @@ export async function getFrontmostAppUITree(): Promise<AXElement | null> {
     });
   });
 }
-
