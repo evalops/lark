@@ -4,7 +4,7 @@ import { logEvent, logError } from '../log';
 import { sendStatusUpdate } from '../statusManager';
 import { config } from '../config';
 import { executeComputerAction } from '../computerActions';
-import { ClaudeModelClient, DisplayInfo, StreamEvent } from './modelClient';
+import { IModelClient, DisplayInfo, StreamEvent } from './modelClient';
 import { getFrontmostAppUITree, AXElement } from './axClient';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -332,50 +332,60 @@ function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
   }
 }
 
-export async function processComputerUseClaude(
-  client: ClaudeModelClient,
+export interface ProcessResult {
+  content: string;
+  shouldResume?: boolean;
+  messages?: Anthropic.MessageParam[];
+}
+
+export async function processComputerUse(
+  client: IModelClient,
   prompt: string,
-  abortSignal?: AbortSignal
-): Promise<string> {
+  abortSignal?: AbortSignal,
+  initialMessages?: Anthropic.MessageParam[]
+): Promise<ProcessResult> {
   const display = getDisplayInfo();
-  const messages: Anthropic.MessageParam[] = [];
+  const messages: Anthropic.MessageParam[] = initialMessages ? [...initialMessages] : [];
   const maxSteps = config.agent?.maxSteps ?? 20;
   const minStepDelay = Math.max(0, config.agent?.minStepDelayMs ?? 0);
 
-  logEvent('claude_agent_start', { prompt });
-  sendStatusUpdate('Step 1: Taking initial screenshot');
+  logEvent('agent_start', { prompt, isResume: !!initialMessages });
 
-  const initialScreenshot = await captureBase64({
-    width: display.width,
-    height: display.height,
-  });
+  if (!initialMessages) {
+    sendStatusUpdate('Step 1: Taking initial screenshot');
 
-  const uiTree = await getFrontmostAppUITree();
-  const uiContext = uiTree
-    ? `\n\nActive Window UI Structure:\n${JSON.stringify(simplifyAXTree(uiTree), null, 2)}`
-    : '';
+    const initialScreenshot = await captureBase64({
+      width: display.width,
+      height: display.height,
+    });
 
-  messages.push({
-    role: 'user',
-    content: [
-      {
-        type: 'text',
-        text: `Task: ${prompt}${uiContext}\n\nHere is the current screen. Use the computer tool to complete this task.`,
-      },
-      {
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: initialScreenshot },
-      },
-    ],
-  });
+    const uiTree = await getFrontmostAppUITree();
+    const uiContext = uiTree
+      ? `\n\nActive Window UI Structure:\n${JSON.stringify(simplifyAXTree(uiTree), null, 2)}`
+      : '';
+
+    messages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `Task: ${prompt}${uiContext}\n\nHere is the current screen. Use the computer tool to complete this task.`,
+        },
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/jpeg', data: initialScreenshot },
+        },
+      ],
+    });
+  }
 
   for (let step = 1; step <= maxSteps; step++) {
     if (abortSignal?.aborted) {
       sendStatusUpdate('Cancelled');
-      return 'Task cancelled by user';
+      return { content: 'Task cancelled by user' };
     }
 
-    logEvent('claude_step_start', { step });
+    logEvent('agent_step_start', { step });
     sendStatusUpdate(`Step ${step}: Thinking...`);
 
     // Validate message history before sending to prevent 400 errors
@@ -398,7 +408,7 @@ export async function processComputerUseClaude(
       response = await client.computerUseStream(
         {
           messages,
-          systemPrompt: claudeSystemPrompt(),
+          systemPrompt: claudeSystemPrompt(), // TODO: Make this provider-agnostic if needed
           display,
           signal: abortSignal,
         },
@@ -407,7 +417,7 @@ export async function processComputerUseClaude(
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') {
         sendStatusUpdate('Cancelled');
-        return 'Task cancelled by user';
+        return { content: 'Task cancelled by user' };
       }
       
       const apiError = err as any;
@@ -418,8 +428,8 @@ export async function processComputerUseClaude(
         error: apiError.error
       };
       
-      logError('claude_api_error', err as Error, errorDetails);
-      console.error('Full Claude API Error:', JSON.stringify(apiError, null, 2));
+      logError('api_error', err as Error, errorDetails);
+      console.error('Full API Error:', JSON.stringify(apiError, null, 2));
       
       // Handle 400 errors - often caused by tool_use/tool_result mismatch
       if (apiError.status === 400) {
@@ -427,7 +437,7 @@ export async function processComputerUseClaude(
         
         // Check if the error is related to tool_use/tool_result pairing
         if (errorMessage.includes('tool_use') || errorMessage.includes('tool_result')) {
-          logError('claude_tool_pairing_error', new Error('Tool use/result pairing issue detected'));
+          logError('tool_pairing_error', new Error('Tool use/result pairing issue detected'));
           
           // Prune corrupted messages: remove the last assistant message if it has unpaired tool_use
           if (messages.length >= 2) {
@@ -442,7 +452,7 @@ export async function processComputerUseClaude(
               
               if (hasToolUse && lastMessage?.role !== 'user') {
                 messages.pop();
-                logEvent('claude_pruned_unpaired_tool_use', { messagesRemaining: messages.length });
+                logEvent('pruned_unpaired_tool_use', { messagesRemaining: messages.length });
               }
             }
           }
@@ -454,7 +464,7 @@ export async function processComputerUseClaude(
       continue;
     }
 
-    logEvent('claude_response_received', {
+    logEvent('response_received', {
       step,
       stopReason: response.stopReason,
       tokens: response.usage
@@ -463,6 +473,7 @@ export async function processComputerUseClaude(
             output: response.usage.outputTokens,
             cacheCreation: response.usage.cacheCreationTokens,
             cacheRead: response.usage.cacheReadTokens,
+            
           }
         : undefined,
     });
@@ -493,14 +504,27 @@ export async function processComputerUseClaude(
         (block): block is Anthropic.TextBlock => block.type === 'text'
       );
       if (textBlock?.text) {
-        logEvent('claude_task_complete', { step });
+        logEvent('task_complete', { step });
         sendStatusUpdate('Task complete');
-        return textBlock.text;
+        return { content: textBlock.text };
       }
       if (response.stopReason === 'end_turn') {
-        return 'Task completed';
+        return { content: 'Task completed' };
       }
       continue;
+    }
+
+    // Check for ask_user tool
+    const askUserTool = toolUseBlocks.find(t => t.name === 'ask_user');
+    if (askUserTool) {
+      const input = askUserTool.input as { question: string };
+      const question = input.question || 'I need your input to continue.';
+      sendStatusUpdate(`Asking user: ${question}`);
+      return {
+        content: question,
+        shouldResume: true,
+        messages: messages
+      };
     }
 
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
@@ -509,7 +533,7 @@ export async function processComputerUseClaude(
       const action = toolUse.input as ClaudeAction;
       const actionDesc = describeClaudeAction(action);
       sendStatusUpdate(`Step ${step}: ${actionDesc}`);
-      logEvent('claude_action', { step, action: action.action });
+      logEvent('action', { step, action: action.action });
 
       try {
         if (action.action === 'screenshot') {
@@ -555,7 +579,7 @@ export async function processComputerUseClaude(
           // Anthropic needs the full context history. However, we can ensure we don't keep *duplicate* copies.
         }
       } catch (err) {
-        logError('claude_action_error', err as Error);
+        logError('action_error', err as Error);
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
@@ -572,7 +596,10 @@ export async function processComputerUseClaude(
     }
   }
 
-  logEvent('claude_max_steps_reached', { maxSteps });
+  logEvent('max_steps_reached', { maxSteps });
   sendStatusUpdate('Max steps reached');
-  return 'Max steps reached without completing the task';
+  return { content: 'Max steps reached without completing the task' };
 }
+
+// Re-export old name for compatibility if needed, but we should update callers
+export const processComputerUseClaude = processComputerUse;

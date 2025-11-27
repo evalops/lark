@@ -83,8 +83,9 @@ function str(envVar: string | undefined, fallback: string): string {
 }
 
 export interface Config {
-  model: { provider: string };
+  model: { provider: 'claude' | 'gemini' };
   claude: { apiKey: string; model: string };
+  gemini: { apiKey: string; model: string };
   agent: { maxSteps: number; minStepDelayMs: number };
   ui: {
     pillBaseHeight: number;
@@ -105,11 +106,15 @@ export interface Config {
 function buildConfig(): Config {
   return {
     model: {
-      provider: 'claude',
+      provider: (process.env.MODEL_PROVIDER as 'claude' | 'gemini') || 'claude',
     },
     claude: {
       apiKey: str(process.env.ANTHROPIC_API_KEY, ''),
       model: str(process.env.CLAUDE_MODEL, 'claude-opus-4-5-20251101'),
+    },
+    gemini: {
+      apiKey: str(process.env.GEMINI_API_KEY, ''),
+      model: str(process.env.GEMINI_MODEL, 'gemini-2.0-flash-exp'),
     },
     agent: {
       maxSteps: num(process.env.CUA_MAX_STEPS, 1000),
@@ -148,8 +153,13 @@ export function getUserEnvPath(): string {
 
 export function validateConfig(): string[] {
   const errors: string[] = [];
-  if (!config.claude.apiKey) errors.push('ANTHROPIC_API_KEY is not set');
-  if (!config.claude.model) errors.push('CLAUDE_MODEL is not set');
+  if (config.model.provider === 'claude') {
+    if (!config.claude.apiKey) errors.push('ANTHROPIC_API_KEY is not set');
+    if (!config.claude.model) errors.push('CLAUDE_MODEL is not set');
+  } else if (config.model.provider === 'gemini') {
+    if (!config.gemini.apiKey) errors.push('GEMINI_API_KEY is not set');
+    if (!config.gemini.model) errors.push('GEMINI_MODEL is not set');
+  }
   return errors;
 }
 
@@ -164,8 +174,14 @@ export function saveUserConfig(updates: Partial<Config>): void {
   const parsed = dotenv.parse(envContent);
 
   // Update values
+  if (updates.model?.provider !== undefined) parsed.MODEL_PROVIDER = updates.model.provider;
+  
   if (updates.claude?.apiKey !== undefined) parsed.ANTHROPIC_API_KEY = updates.claude.apiKey;
   if (updates.claude?.model !== undefined) parsed.CLAUDE_MODEL = updates.claude.model;
+  
+  if (updates.gemini?.apiKey !== undefined) parsed.GEMINI_API_KEY = updates.gemini.apiKey;
+  if (updates.gemini?.model !== undefined) parsed.GEMINI_MODEL = updates.gemini.model;
+  
   if (updates.agent?.maxSteps !== undefined) parsed.CUA_MAX_STEPS = String(updates.agent.maxSteps);
   if (updates.agent?.minStepDelayMs !== undefined) parsed.AGENT_MIN_STEP_DELAY_MS = String(updates.agent.minStepDelayMs);
 

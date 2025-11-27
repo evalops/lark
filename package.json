@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.1",
+    "@google/generative-ai": "^0.24.1",
     "@nut-tree-fork/nut-js": "^4.2.6",
     "dotenv": "^17.2.1",
     "node-mac-permissions": "^1.2.0",

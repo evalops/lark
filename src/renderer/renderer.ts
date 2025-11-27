@@ -56,6 +56,7 @@ const settingsModal = must(document.getElementById('settings-modal'), 'settings-
 const settingsClose = must(document.getElementById('settings-close') as HTMLButtonElement, 'settings-close');
 const settingsSave = must(document.getElementById('settings-save') as HTMLButtonElement, 'settings-save');
 
+const settingProvider = must(document.getElementById('setting-provider') as HTMLSelectElement, 'setting-provider');
 const settingModel = must(document.getElementById('setting-model') as HTMLSelectElement, 'setting-model');
 const settingMaxSteps = must(document.getElementById('setting-max-steps') as HTMLInputElement, 'setting-max-steps');
 const settingDelay = must(document.getElementById('setting-delay') as HTMLInputElement, 'setting-delay');
@@ -256,15 +257,67 @@ input.addEventListener('input', () => {
 });
 
 // Settings Logic
+let currentConfig: any = {};
+
+const modelsByProvider: Record<string, { value: string; label: string }[]> = {
+  claude: [
+    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+    { value: 'claude-opus-4-5-20251101', label: 'Claude Opus 4.5' },
+  ],
+  gemini: [
+    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash' },
+    { value: 'gemini-exp-1206', label: 'Gemini Exp 1206' },
+  ],
+};
+
+function updateModelOptions(provider: string): void {
+  settingModel.innerHTML = '';
+  const options = modelsByProvider[provider] || [];
+  options.forEach(opt => {
+    const el = document.createElement('option');
+    el.value = opt.value;
+    el.textContent = opt.label;
+    settingModel.appendChild(el);
+  });
+}
+
+settingProvider.addEventListener('change', () => {
+  const provider = settingProvider.value;
+  updateModelOptions(provider);
+  
+  // Set default model for provider if not set
+  if (provider === 'claude') {
+    settingModel.value = currentConfig.claude?.model || 'claude-opus-4-5-20251101';
+    settingApiKey.value = currentConfig.claude?.apiKey || '';
+    settingApiKey.placeholder = 'sk-ant-...';
+  } else {
+    settingModel.value = currentConfig.gemini?.model || 'gemini-2.0-flash-exp';
+    settingApiKey.value = currentConfig.gemini?.apiKey || '';
+    settingApiKey.placeholder = 'AIza...';
+  }
+});
+
 async function openSettings(): Promise<void> {
   try {
-    const config = await window.larkAPI.getConfig();
+    currentConfig = await window.larkAPI.getConfig();
+    
+    const provider = currentConfig.model?.provider || 'claude';
+    settingProvider.value = provider;
+    updateModelOptions(provider);
     
     // Populate fields
-    settingModel.value = config.claude?.model || 'claude-opus-4-5-20251101';
-    settingMaxSteps.value = String(config.agent?.maxSteps || 1000);
-    settingDelay.value = String(config.agent?.minStepDelayMs || 1000);
-    settingApiKey.value = config.claude?.apiKey || '';
+    if (provider === 'claude') {
+      settingModel.value = currentConfig.claude?.model || 'claude-opus-4-5-20251101';
+      settingApiKey.value = currentConfig.claude?.apiKey || '';
+      settingApiKey.placeholder = 'sk-ant-...';
+    } else {
+      settingModel.value = currentConfig.gemini?.model || 'gemini-2.0-flash-exp';
+      settingApiKey.value = currentConfig.gemini?.apiKey || '';
+      settingApiKey.placeholder = 'AIza...';
+    }
+
+    settingMaxSteps.value = String(currentConfig.agent?.maxSteps || 1000);
+    settingDelay.value = String(currentConfig.agent?.minStepDelayMs || 1000);
     
     // Show modal
     pill.classList.add('showing-settings');
@@ -285,16 +338,32 @@ function closeSettings(): void {
 }
 
 async function saveSettings(): Promise<void> {
-  const updates = {
-    claude: {
-      model: settingModel.value,
-      apiKey: settingApiKey.value,
-    },
+  const provider = settingProvider.value;
+  const updates: any = {
+    model: { provider },
     agent: {
       maxSteps: Number(settingMaxSteps.value),
       minStepDelayMs: Number(settingDelay.value),
     },
   };
+
+  // Update provider specific settings
+  // We also need to make sure we don't wipe out the *other* provider's key if we are saving
+  // But currently we only edit the active one. 
+  // The saveConfig in main merges deep or shallow? It seems to check individual fields in `saveUserConfig`.
+  // `saveUserConfig` checks `if (updates.claude?.apiKey !== undefined)`.
+  
+  if (provider === 'claude') {
+    updates.claude = {
+      model: settingModel.value,
+      apiKey: settingApiKey.value,
+    };
+  } else {
+    updates.gemini = {
+      model: settingModel.value,
+      apiKey: settingApiKey.value,
+    };
+  }
 
   settingsSave.disabled = true;
   settingsSave.textContent = 'Saving...';
@@ -303,6 +372,9 @@ async function saveSettings(): Promise<void> {
     const res = await window.larkAPI.saveConfig(updates);
     if (res.success) {
       closeSettings();
+      
+      // Refresh config status if needed (e.g. if key was missing)
+      checkConfigStatus();
     } else {
       alert('Failed to save settings: ' + res.error);
     }
@@ -607,9 +679,9 @@ function showApiKeySetup(provider: string): void {
   apiKeySetup.classList.remove('hidden');
   mainInput.classList.add('hidden');
 
-  const displayName = provider === 'claude' ? 'Anthropic' : 'OpenRouter';
+  const displayName = provider === 'claude' ? 'Anthropic' : 'Google Gemini';
   providerName.textContent = displayName;
-  apiKeyInput.placeholder = provider === 'claude' ? 'sk-ant-...' : 'sk-or-...';
+  apiKeyInput.placeholder = provider === 'claude' ? 'sk-ant-...' : 'AIza...';
 
   setTimeout(() => apiKeyInput.focus(), 100);
   requestAnimationFrame(() => fitWindowToPill());

@@ -5,9 +5,10 @@ import fsp from 'fs/promises';
 import { mouse, keyboard, Point } from '@nut-tree-fork/nut-js';
 import { captureToFile } from './screen';
 import { logEvent, logError } from './log';
-import { processComputerUseClaude } from './services/agent';
+import { processComputerUse } from './services/agent';
 import { config, getUserEnvPath, refreshConfig, saveUserConfig, Config } from './config';
-import { ClaudeModelClient } from './services/modelClient';
+import { IModelClient } from './services/modelClient';
+import Anthropic from '@anthropic-ai/sdk';
 
 interface HistoryMessage {
   role: 'user' | 'assistant';
@@ -18,12 +19,13 @@ interface HistoryMessage {
 interface IpcContext {
   getAbortController: () => AbortController | null;
   setAbortController: (controller: AbortController | null) => void;
-  getClaudeClient: () => ClaudeModelClient | null;
+  getModelClient: () => IModelClient | null;
   initializeModelClient: () => void;
   getWindow: () => BrowserWindow | null;
 }
 
 let history: HistoryMessage[] = [];
+let lastSessionMessages: Anthropic.MessageParam[] | null = null;
 
 function historyPath(): string {
   return path.join(app.getPath('userData'), 'history.json');
@@ -80,16 +82,58 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       ctx.setAbortController(abortController);
 
       try {
-        const claudeClient = ctx.getClaudeClient();
-        if (!claudeClient) {
-          throw new Error('No Claude client initialized');
+        const client = ctx.getModelClient();
+        if (!client) {
+          throw new Error('No model client initialized');
         }
 
-        const content = await processComputerUseClaude(
-          claudeClient,
-          safePrompt,
-          abortController.signal
-        );
+        let result;
+        
+        // Check if we are resuming a session (responding to ask_user)
+        if (lastSessionMessages) {
+          const lastMsg = lastSessionMessages[lastSessionMessages.length - 1];
+          if (lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
+            const toolUse = lastMsg.content.find((c: any) => c.type === 'tool_use' && c.name === 'ask_user');
+            
+            if (toolUse) {
+              // Append the user's response as a tool_result
+              lastSessionMessages.push({
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: safePrompt
+                }]
+              });
+              
+              result = await processComputerUse(
+                client,
+                safePrompt, // This is logged/used for context but messages are main source
+                abortController.signal,
+                lastSessionMessages
+              );
+            }
+          }
+        }
+        
+        // If not resuming or resume failed, start fresh
+        if (!result) {
+          lastSessionMessages = null; // Clear any stale session
+          result = await processComputerUse(
+            client,
+            safePrompt,
+            abortController.signal
+          );
+        }
+
+        const content = result.content;
+
+        // Manage session persistence
+        if (result.shouldResume && result.messages) {
+          lastSessionMessages = result.messages;
+        } else {
+          lastSessionMessages = null;
+        }
 
         const now = Date.now();
         const MAX_SAVE_LEN = 4000;
@@ -126,6 +170,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       ctx.setAbortController(null);
       logEvent('computer_use_cancelled');
     }
+    // Clear any pending session
+    lastSessionMessages = null;
   });
 
   // Mouse control
@@ -218,6 +264,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     try {
       history = [];
       await saveHistory();
+      lastSessionMessages = null;
     } catch (err) {
       logError('clear_history_error', err as Error);
     }
@@ -230,9 +277,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   // Config status
   ipcMain.handle('get-config-status', async () => {
-    const provider = 'claude';
+    const provider = config.model.provider;
     const needsApiKey = true;
-    const hasApiKey = !!config.claude.apiKey;
+    const hasApiKey = provider === 'claude' 
+      ? !!config.claude.apiKey 
+      : !!config.gemini.apiKey;
+      
     return { provider, needsApiKey, hasApiKey };
   });
 
@@ -254,7 +304,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   });
 
-  // Save API key (Legacy/Specific wrapper)
+  // Save API key (Legacy/Specific wrapper - maps to current provider)
   ipcMain.handle('save-api-key', async (_event, apiKey: unknown) => {
     try {
       const key = typeof apiKey === 'string' ? apiKey.trim() : '';
@@ -262,14 +312,18 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         return { success: false, error: 'API key cannot be empty' };
       }
 
-      if (!key.startsWith('sk-ant-')) {
-        return { success: false, error: 'Invalid key format. Anthropic keys start with sk-ant-' };
+      if (config.model.provider === 'claude') {
+        if (!key.startsWith('sk-ant-')) {
+          return { success: false, error: 'Invalid key format. Anthropic keys start with sk-ant-' };
+        }
+        saveUserConfig({ claude: { apiKey: key, model: config.claude.model } });
+      } else {
+        // Simple check for Gemini key if we want, or loose validation
+        saveUserConfig({ gemini: { apiKey: key, model: config.gemini.model } });
       }
-
-      saveUserConfig({ claude: { apiKey: key, model: config.claude.model } });
+      
       ctx.initializeModelClient();
-
-      logEvent('api_key_saved', { provider: 'claude' });
+      logEvent('api_key_saved', { provider: config.model.provider });
       return { success: true };
     } catch (err) {
       logError('save_api_key_error', err as Error);

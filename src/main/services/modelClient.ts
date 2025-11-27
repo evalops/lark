@@ -44,7 +44,14 @@ export interface StreamEvent {
   stop_reason?: string | null;
 }
 
-export class ClaudeModelClient {
+export interface IModelClient {
+  computerUseStream(
+    request: ComputerUseRequest,
+    onEvent?: (event: StreamEvent) => void
+  ): Promise<ComputerUseResponse>;
+}
+
+export class AnthropicClient implements IModelClient {
   private client: Anthropic;
   private model: string;
 
@@ -85,7 +92,23 @@ export class ClaudeModelClient {
       system: request.systemPrompt
         ? [{ type: 'text', text: request.systemPrompt, cache_control: { type: 'ephemeral' } }]
         : undefined,
-      tools: [computerTool] as unknown as Anthropic.Tool[],
+      tools: [
+        computerTool,
+        {
+          name: 'ask_user',
+          description: 'Ask the user for clarity or additional information if you are stuck or need more details to complete the task.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description: 'The question to ask the user',
+              },
+            },
+            required: ['question'],
+          },
+        },
+      ] as unknown as Anthropic.Tool[],
       messages: request.messages,
       betas: [betaFlag, 'prompt-caching-2024-07-31'],
     } as unknown as Anthropic.Messages.MessageStreamParams, { signal: request.signal });
@@ -143,3 +166,7 @@ export class ClaudeModelClient {
     };
   }
 }
+
+// Re-export specific client as default or named for backward compat if needed, 
+// but preferred to use interface in consumers.
+export const ClaudeModelClient = AnthropicClient;

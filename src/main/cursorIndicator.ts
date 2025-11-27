@@ -2,8 +2,8 @@ import { BrowserWindow, screen } from 'electron';
 
 let indicatorWindow: BrowserWindow | null = null;
 
-const INDICATOR_SIZE = 40;
-const INDICATOR_DURATION = 300;
+const INDICATOR_SIZE = 60;
+const INDICATOR_DURATION = 500;
 
 function createIndicatorWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -39,30 +39,42 @@ function createIndicatorWindow(): BrowserWindow {
           padding: 0;
           background: transparent;
           overflow: hidden;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
         }
         .indicator {
-          width: ${INDICATOR_SIZE}px;
-          height: ${INDICATOR_SIZE}px;
+          width: 20px;
+          height: 20px;
           border-radius: 50%;
-          border: 3px solid #ff6b6b;
-          background: rgba(255, 107, 107, 0.3);
-          box-sizing: border-box;
-          animation: pulse 0.3s ease-out forwards;
+          background: rgba(0, 122, 255, 0.8);
+          box-shadow: 0 0 10px rgba(0, 122, 255, 0.5);
+          position: absolute;
+          animation: scaleIn 0.2s ease-out forwards;
         }
-        @keyframes pulse {
-          0% {
-            transform: scale(0.5);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(1.2);
-            opacity: 0;
-          }
+        .ripple {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          border: 2px solid rgba(0, 122, 255, 0.6);
+          position: absolute;
+          box-sizing: border-box;
+          animation: ripple 0.5s ease-out forwards;
+        }
+        @keyframes scaleIn {
+          0% { transform: scale(0); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes ripple {
+          0% { transform: scale(1); opacity: 0.8; }
+          100% { transform: scale(3); opacity: 0; }
         }
       </style>
     </head>
     <body>
       <div class="indicator"></div>
+      <div class="ripple"></div>
     </body>
     </html>
   `;

@@ -4,7 +4,8 @@ import macPermissions from 'node-mac-permissions';
 import { logEvent, logError, initLogger } from './log';
 import { config, validateConfig, getUserEnvPath } from './config';
 import { setMainWindow } from './statusManager';
-import { ClaudeModelClient } from './services/modelClient';
+import { IModelClient, ClaudeModelClient } from './services/modelClient';
+import { GeminiModelClient } from './services/geminiClient';
 import { registerIpcHandlers, loadHistory } from './ipcHandlers';
 import { destroyIndicator } from './cursorIndicator';
 
@@ -23,15 +24,25 @@ function emergencyStop(): void {
   }
 }
 
-// Model client (Claude-only)
-let claudeClient: ClaudeModelClient | null = null;
+// Model client
+let modelClient: IModelClient | null = null;
 
 function initializeModelClient(): void {
-  claudeClient = new ClaudeModelClient({
-    apiKey: config.claude.apiKey,
-    model: config.claude.model,
-  });
-  logEvent('model_client_init', { provider: 'claude', model: config.claude.model });
+  if (config.model.provider === 'claude') {
+    modelClient = new ClaudeModelClient({
+      apiKey: config.claude.apiKey,
+      model: config.claude.model,
+    });
+    logEvent('model_client_init', { provider: 'claude', model: config.claude.model });
+  } else if (config.model.provider === 'gemini') {
+    modelClient = new GeminiModelClient({
+      apiKey: config.gemini.apiKey,
+      model: config.gemini.model,
+    });
+    logEvent('model_client_init', { provider: 'gemini', model: config.gemini.model });
+  } else {
+    logError('model_client_init_error', new Error(`Unknown provider: ${config.model.provider}`));
+  }
 }
 
 let win: BrowserWindow | null = null;
@@ -82,6 +93,9 @@ function createWindow(): void {
 
 function ensureRuntimeConfig(): boolean {
   const errors = validateConfig();
+  // Filter out missing API key errors if we are just checking struct
+  // But actually we need keys. However, for first run we might want to allow start to set keys.
+  // The logic in validateConfig checks for keys based on provider.
   const criticalErrors = errors.filter((e) => !e.includes('API_KEY'));
   if (criticalErrors.length === 0) return true;
 
@@ -119,7 +133,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers({
     getAbortController: () => currentAbortController,
     setAbortController: (controller) => { currentAbortController = controller; },
-    getClaudeClient: () => claudeClient,
+    getModelClient: () => modelClient,
     initializeModelClient,
     getWindow: () => win,
   });
