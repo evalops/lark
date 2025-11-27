@@ -273,6 +273,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // Constants
   ipcMain.handle('get-constants', async () => ({
     PILL_BASE_HEIGHT: config.ui.pillBaseHeight,
+    APP_VERSION: app.getVersion(),
   }));
 
   // Config status

@@ -10,8 +10,8 @@ interface LarkAPI {
   getHistory: () => Promise<Array<{ role: string; content: string }>>;
   clearHistory: () => Promise<void>;
   onStatusUpdate: (callback: (status: string) => void) => void;
-  constants: { PILL_BASE_HEIGHT: number };
-  getConstants: () => Promise<{ PILL_BASE_HEIGHT: number }>;
+  constants: { PILL_BASE_HEIGHT: number; APP_VERSION?: string };
+  getConstants: () => Promise<{ PILL_BASE_HEIGHT: number; APP_VERSION: string }>;
   getConfigStatus: () => Promise<{ needsApiKey: boolean; hasApiKey: boolean; provider: string }>;
   saveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
   quitApp: () => Promise<void>;
@@ -29,6 +29,7 @@ declare global {
 }
 
 let PILL_BASE_HEIGHT = window.larkAPI?.constants?.PILL_BASE_HEIGHT ?? 60;
+let APP_VERSION = window.larkAPI?.constants?.APP_VERSION ?? '0.0.0';
 
 function must<T extends HTMLElement>(v: T | null, id: string): T {
   if (!v) throw new Error(`Missing #${id}`);
@@ -74,24 +75,7 @@ const confirmationText = must(document.getElementById('confirmation-text'), 'con
 const confirmAllow = must(document.getElementById('confirm-allow') as HTMLButtonElement, 'confirm-allow');
 const confirmDeny = must(document.getElementById('confirm-deny') as HTMLButtonElement, 'confirm-deny');
 
-import { registerCommand, handleSlashCommand } from './slashCommands.js';
-
-// Register default commands
-registerCommand('/quit', async () => {
-  await window.larkAPI.quitApp();
-}, 'Quit the application');
-
-registerCommand('/clear', async () => {
-  try {
-    await window.larkAPI.clearHistory();
-  } catch (err) {
-    console.error('Failed to clear history:', err);
-  }
-  responseDiv.innerHTML = '';
-  setShowingResponse(false);
-  setWindowBaseHeight();
-  updateSendButtonAppearance();
-}, 'Clear chat history');
+import { registerCommand, handleSlashCommand, getRegistry } from './slashCommands.js';
 
 let isLoading = false;
 let showingResponse = false;
@@ -150,6 +134,104 @@ function setCaretToEnd(): void {
   const length = input.value.length;
   input.setSelectionRange(length, length);
 }
+
+async function stopAgent(): Promise<void> {
+  if (!isLoading) return;
+  
+  try {
+    await window.larkAPI.stopComputerUse();
+  } catch (err) {
+    console.error('Error stopping:', err);
+  }
+  
+  setLoading(false);
+  input.placeholder = 'Stopped';
+  updateSendButtonAppearance();
+  
+  setTimeout(() => {
+    input.placeholder = 'Ask me to control your computer...';
+  }, 1500);
+}
+
+// Register default commands
+registerCommand('/quit', async () => {
+  await window.larkAPI.quitApp();
+}, 'Quit the application');
+
+registerCommand('/clear', async () => {
+  try {
+    await window.larkAPI.clearHistory();
+  } catch (err) {
+    console.error('Failed to clear history:', err);
+  }
+  responseDiv.innerHTML = '';
+  setShowingResponse(false);
+  setWindowBaseHeight();
+  updateSendButtonAppearance();
+}, 'Clear chat history');
+
+registerCommand('/help', async () => {
+  const registry = getRegistry();
+  const helpText = Object.entries(registry)
+    .map(([name, cmd]) => `• ${name}: ${cmd.description}`)
+    .join('\n');
+  appendMessage('system', 'Available commands:\n' + helpText);
+}, 'Show available commands');
+
+registerCommand('/settings', async () => {
+  await openSettings();
+}, 'Open settings');
+
+registerCommand('/version', async () => {
+  appendMessage('system', `Lark v${APP_VERSION}`);
+}, 'Show application version');
+
+registerCommand('/stop', async () => {
+  await stopAgent();
+}, 'Stop current task');
+
+registerCommand('/model', async (args) => {
+  const provider = args.trim().toLowerCase();
+  
+  // Need current config to know what's active
+  try {
+    currentConfig = await window.larkAPI.getConfig();
+    const currentProvider = currentConfig.model?.provider || 'claude';
+    const currentModel = currentProvider === 'claude' 
+      ? currentConfig.claude?.model 
+      : currentConfig.gemini?.model;
+
+    if (!provider) {
+      appendMessage('system', `Current model: ${currentProvider}/${currentModel}`);
+      return;
+    }
+
+    if (provider === 'claude' || provider === 'gemini') {
+      if (provider === currentProvider) {
+        appendMessage('system', `Already using ${provider}`);
+        return;
+      }
+
+      // Switch provider
+      const updates: DeepPartial<Config> = {
+        model: { provider: provider as 'claude' | 'gemini' }
+      };
+      
+      const res = await window.larkAPI.saveConfig(updates);
+      if (res.success) {
+        appendMessage('system', `Switched to ${provider}`);
+        checkConfigStatus();
+      } else {
+        appendMessage('system', `Failed to switch: ${res.error}`);
+      }
+    } else {
+      appendMessage('system', `Unknown provider: ${provider}. Use 'claude' or 'gemini'`);
+    }
+  } catch (err) {
+    console.error('Error in /model command:', err);
+    appendMessage('system', 'Failed to access configuration');
+  }
+}, 'Show or switch model provider (e.g. /model or /model gemini)');
 
 async function sendPrompt(): Promise<void> {
   const prompt = input.value.trim();
@@ -222,19 +304,7 @@ input.addEventListener('keydown', (e) => {
 
 sendButton.addEventListener('click', async () => {
   if (isLoading) {
-    try {
-      await window.larkAPI.stopComputerUse();
-    } catch (err) {
-      console.error('Error stopping:', err);
-    }
-    isLoading = false;
-    loader.classList.add('hidden');
-    input.disabled = false;
-    input.placeholder = 'Stopped';
-    updateSendButtonAppearance();
-    setTimeout(() => {
-      input.placeholder = 'Ask me to control your computer...';
-    }, 1500);
+    await stopAgent();
     return;
   }
 
@@ -707,6 +777,9 @@ if (window.larkAPI?.getConstants) {
       if (c && typeof c.PILL_BASE_HEIGHT === 'number') {
         PILL_BASE_HEIGHT = c.PILL_BASE_HEIGHT;
         setWindowBaseHeight();
+      }
+      if (c && c.APP_VERSION) {
+        APP_VERSION = c.APP_VERSION;
       }
     })
     .catch((err) => {

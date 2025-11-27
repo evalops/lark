@@ -15,6 +15,10 @@ export function getCommand(name: string): SlashCommand | undefined {
   return registry[name];
 }
 
+export function getRegistry(): Record<string, SlashCommand> {
+  return registry;
+}
+
 export async function handleSlashCommand(
   input: string,
   onError: (error: unknown) => void
@@ -36,4 +40,3 @@ export async function handleSlashCommand(
 export function resetRegistry() {
   for (const key in registry) delete registry[key];
 }
-
