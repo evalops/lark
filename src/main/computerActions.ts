@@ -50,6 +50,12 @@ const toKey = (token: string): Key | null => keyMap[normalizeLookup(token)] ?? n
 async function pressAndReleaseKey(target: string, modifiers: Key[] = []): Promise<void> {
   const mappedKey = toKey(target);
   if (mappedKey) {
+    if ((mappedKey as number) === (Key.Escape as number)) {
+      throw new Error('Pressing Escape is restricted to prevent triggering the emergency stop.');
+    }
+    if ((mappedKey as number) === (Key.X as number)) {
+      throw new Error('Pressing X is restricted.');
+    }
     await keyboard.pressKey(...modifiers, mappedKey);
     if (arrowKeys.has(mappedKey) && modifiers.length === 0) {
       await sleep(100);
@@ -79,8 +85,7 @@ async function pressAndReleaseKey(target: string, modifiers: Key[] = []): Promis
     await keyboard.pressKey(Key.Tab);
     await keyboard.releaseKey(Key.Tab);
   } else if (upper === 'ESCAPE' || upper === 'ESC') {
-    await keyboard.pressKey(Key.Escape);
-    await keyboard.releaseKey(Key.Escape);
+    throw new Error('Pressing Escape is restricted to prevent triggering the emergency stop.');
   } else if (upper === 'BACKSPACE') {
     await keyboard.pressKey(Key.Backspace);
     await keyboard.releaseKey(Key.Backspace);
@@ -264,5 +269,6 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
     }
   } catch (err) {
     logError('action_execution_failed', err as Error, { actionType, action });
+    throw err;
   }
 }
