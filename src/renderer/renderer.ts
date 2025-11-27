@@ -266,7 +266,7 @@ function setupSpeechRecognition() {
   if ('webkitSpeechRecognition' in window) {
     const SpeechRecognition = window.webkitSpeechRecognition;
     recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onstart = () => {
