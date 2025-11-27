@@ -1,5 +1,5 @@
 import { screen } from 'electron';
-import { captureBase64, captureRegionBase64 } from '../screen';
+import { captureBase64 } from '../screen';
 import { logEvent, logError } from '../log';
 import { sendStatusUpdate } from '../statusManager';
 import { config } from '../config';
@@ -71,7 +71,6 @@ interface ClaudeAction {
   scroll_direction?: 'up' | 'down' | 'left' | 'right';
   scroll_amount?: number;
   duration?: number;
-  region?: [number, number, number, number];
 }
 
 async function executeClaudeAction(
@@ -243,12 +242,20 @@ function describeClaudeAction(action: ClaudeAction): string {
 }
 
 function simplifyAXTree(element: AXElement, depth = 0): any {
+  if (element.truncated) return '...';
   if (depth > 6) return '...'; // Prune deep trees
 
   const simplified: any = {
     role: element.role,
-    title: element.title,
   };
+
+  if (element.subrole) {
+    simplified.subrole = element.subrole;
+  }
+
+  if (element.title) {
+    simplified.title = element.title;
+  }
 
   if (element.value) {
     simplified.value = element.value;
@@ -256,6 +263,10 @@ function simplifyAXTree(element: AXElement, depth = 0): any {
   
   if (element.description) {
     simplified.description = element.description;
+  }
+
+  if (element.identifier) {
+    simplified.identifier = element.identifier;
   }
 
   if (element.frame) {

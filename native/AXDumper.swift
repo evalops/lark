@@ -26,34 +26,51 @@ func unwrapAXValue(_ value: AnyObject) -> Any? {
 }
 
 // Helper to get attribute value
-func getAttribute(_ element: AXUIElement, _ attribute: String) -> Any? {
+func getAttribute(_ element: AXUIElement, _ attribute: CFString) -> Any? {
     var value: AnyObject?
-    let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+    let result = AXUIElementCopyAttributeValue(element, attribute, &value)
     if result == .success, let v = value {
         return unwrapAXValue(v)
     }
     return nil
 }
 
+// Typed attribute helper
+func attribute<T>(_ element: AXUIElement, _ attr: CFString) -> T? {
+    guard let raw = getAttribute(element, attr) else { return nil }
+    return raw as? T
+}
+
+// Define missing constant if needed
+let kAXFrameAttribute = "AXFrame" as CFString
+
 // Recursive function to dump element
 func dumpElement(_ element: AXUIElement, depth: Int = 0) -> [String: Any]? {
-    if depth > 5 { return nil } // Safety limit
+    if depth > 5 { 
+        return ["truncated": true] 
+    }
 
     var info: [String: Any] = [:]
     
-    if let role = getAttribute(element, kAXRoleAttribute) as? String {
+    if let role: String = attribute(element, kAXRoleAttribute as CFString) {
         info["role"] = role
     }
-    if let title = getAttribute(element, kAXTitleAttribute) as? String, !title.isEmpty {
+    if let subrole: String = attribute(element, kAXSubroleAttribute as CFString) {
+        info["subrole"] = subrole
+    }
+    if let title: String = attribute(element, kAXTitleAttribute as CFString), !title.isEmpty {
         info["title"] = title
     }
-    if let val = getAttribute(element, kAXValueAttribute), let strVal = val as? String, !strVal.isEmpty {
-        info["value"] = strVal
+    if let val: String = attribute(element, kAXValueAttribute as CFString), !val.isEmpty {
+        info["value"] = val
     }
-    if let desc = getAttribute(element, kAXDescriptionAttribute) as? String, !desc.isEmpty {
+    if let desc: String = attribute(element, kAXDescriptionAttribute as CFString), !desc.isEmpty {
         info["description"] = desc
     }
-    if let frame = getAttribute(element, "AXFrame") as? [String: CGFloat] {
+    if let identifier: String = attribute(element, kAXIdentifierAttribute as CFString), !identifier.isEmpty {
+        info["identifier"] = identifier
+    }
+    if let frame: [String: CGFloat] = attribute(element, kAXFrameAttribute) {
         info["frame"] = frame
     }
     
@@ -70,6 +87,13 @@ func dumpElement(_ element: AXUIElement, depth: Int = 0) -> [String: Any]? {
     return info
 }
 
+// Check permissions
+let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+if !AXIsProcessTrustedWithOptions(options) {
+    fputs("{\"error\":\"AX not trusted\"}\n", stderr)
+    exit(1)
+}
+
 // Main execution
 let systemWide = AXUIElementCreateSystemWide()
 var focusedAppRef: AnyObject?
@@ -84,5 +108,5 @@ if result == .success {
         print(json)
     }
 } else {
-    print("{\"error\": \"Could not get focused application. Check permissions.\"}")
+    print("{\"error\": \"Could not get focused application.\"}")
 }

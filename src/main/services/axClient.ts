@@ -14,9 +14,12 @@ function getHelperPath(): string {
 
 export interface AXElement {
   role?: string;
+  subrole?: string;
   title?: string;
   value?: string;
   description?: string;
+  identifier?: string;
+  truncated?: boolean;
   frame?: { x: number; y: number; width: number; height: number };
   children?: AXElement[];
 }
