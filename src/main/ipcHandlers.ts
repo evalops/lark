@@ -6,7 +6,7 @@ import { mouse, keyboard, Point } from '@nut-tree-fork/nut-js';
 import { captureToFile } from './screen';
 import { logEvent, logError } from './log';
 import { processComputerUse } from './services/agent';
-import { config, getUserEnvPath, refreshConfig, saveUserConfig, Config } from './config';
+import { config, getUserEnvPath, refreshConfig, saveUserConfig, Config, DeepPartial } from './config';
 import { IModelClient } from './services/modelClient';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -93,7 +93,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         if (lastSessionMessages) {
           const lastMsg = lastSessionMessages[lastSessionMessages.length - 1];
           if (lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
-            const toolUse = lastMsg.content.find((c: any) => c.type === 'tool_use' && c.name === 'ask_user');
+            const toolUse = lastMsg.content.find((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use' && c.name === 'ask_user');
             
             if (toolUse) {
               // Append the user's response as a tool_result
@@ -101,7 +101,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
                 role: 'user',
                 content: [{
                   type: 'tool_result',
-                  tool_use_id: (toolUse as any).id || 'resume_id', 
+                  tool_use_id: toolUse.id, 
                   content: safePrompt
                 }]
               });
@@ -292,9 +292,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Save config
-  ipcMain.handle('save-config', async (_, updates: unknown) => {
+    ipcMain.handle('save-config', async (_, updates: unknown) => {
     try {
-      const newConfig = updates as Partial<Config>;
+      const newConfig = updates as DeepPartial<Config>;
       saveUserConfig(newConfig);
       ctx.initializeModelClient();
       return { success: true };

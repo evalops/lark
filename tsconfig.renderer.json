@@ -3,8 +3,8 @@
     "target": "ES2020",
     "module": "ES2020",
     "lib": ["ES2020", "DOM"],
-    "outDir": "./dist/renderer",
-    "rootDir": "./src/renderer",
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
     "noImplicitAny": true,
     "esModuleInterop": true,
@@ -15,6 +15,6 @@
     "moduleResolution": "node",
     "types": ["vitest/globals"]
   },
-  "include": ["src/renderer/**/*"],
+  "include": ["src/renderer/**/*", "src/common/**/*"],
   "exclude": ["node_modules"]
 }

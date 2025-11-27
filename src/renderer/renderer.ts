@@ -1,3 +1,5 @@
+import { Config, DeepPartial } from '../common/types.js';
+
 interface LarkAPI {
   askOpenAI: (prompt: string) => Promise<string>;
   stopComputerUse: () => Promise<void>;
@@ -13,8 +15,8 @@ interface LarkAPI {
   getConfigStatus: () => Promise<{ needsApiKey: boolean; hasApiKey: boolean; provider: string }>;
   saveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
   quitApp: () => Promise<void>;
-  getConfig: () => Promise<any>;
-  saveConfig: (updates: any) => Promise<{ success: boolean; error?: string }>;
+  getConfig: () => Promise<Config>;
+  saveConfig: (updates: DeepPartial<Config>) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {
@@ -257,7 +259,7 @@ input.addEventListener('input', () => {
 });
 
 // Settings Logic
-let currentConfig: any = {};
+let currentConfig: Partial<Config> = {};
 
 const modelsByProvider: Record<string, { value: string; label: string }[]> = {
   claude: [
@@ -338,8 +340,8 @@ function closeSettings(): void {
 }
 
 async function saveSettings(): Promise<void> {
-  const provider = settingProvider.value;
-  const updates: any = {
+  const provider = settingProvider.value as 'claude' | 'gemini';
+  const updates: DeepPartial<Config> = {
     model: { provider },
     agent: {
       maxSteps: Number(settingMaxSteps.value),

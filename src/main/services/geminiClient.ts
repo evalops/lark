@@ -184,11 +184,8 @@ export class GeminiModelClient implements IModelClient {
         finalContent.unshift({
           type: 'text',
           text: accumulatedText,
-          citations: null // Explicitly null to match interface
-        } as any); // Use any or ensure ContentBlock type match. 
-                   // Anthropic's TextBlock doesn't strictly require citations on *creation* usually,
-                   // but strict typing might be complaining.
-                   // Let's cast to unknown or just include citations: null
+          citations: null
+        });
       }
 
       return {

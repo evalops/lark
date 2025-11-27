@@ -82,26 +82,12 @@ function str(envVar: string | undefined, fallback: string): string {
   return envVar && envVar.length > 0 ? envVar : fallback;
 }
 
-export interface Config {
-  model: { provider: 'claude' | 'gemini' };
-  claude: { apiKey: string; model: string };
-  gemini: { apiKey: string; model: string };
-  agent: { maxSteps: number; minStepDelayMs: number };
-  ui: {
-    pillBaseHeight: number;
-    maxPromptLength: number;
-    maxTypeLength: number;
-    maxHistoryEntries: number;
-    windowMaxHeight: number;
-    windowWidth: number;
-  };
-  actions: {
-    arrowKeyHoldDuration: number;
-    dragHoldDuration: number;
-    dragMinSteps: number;
-    dragStepPixels: number;
-  };
-}
+import { Config, DeepPartial } from '../common/types';
+
+export { Config, DeepPartial };
+
+// Removed local interface Config definition
+
 
 function buildConfig(): Config {
   return {
@@ -163,7 +149,7 @@ export function validateConfig(): string[] {
   return errors;
 }
 
-export function saveUserConfig(updates: Partial<Config>): void {
+export function saveUserConfig(updates: DeepPartial<Config>): void {
   const userEnvPath = getUserEnvPath();
   let envContent = '';
 

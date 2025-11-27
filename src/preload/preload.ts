@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { Config, DeepPartial } from '../common/types';
 
 const api = {
   askOpenAI: (prompt: string) => ipcRenderer.invoke('ask-openai', prompt),
@@ -18,7 +19,7 @@ const api = {
   saveApiKey: (apiKey: string) => ipcRenderer.invoke('save-api-key', apiKey),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   getConfig: () => ipcRenderer.invoke('get-config'),
-  saveConfig: (updates: any) => ipcRenderer.invoke('save-config', updates),
+  saveConfig: (updates: DeepPartial<Config>) => ipcRenderer.invoke('save-config', updates),
 };
 
 contextBridge.exposeInMainWorld('larkAPI', api);

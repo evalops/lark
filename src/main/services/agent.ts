@@ -8,6 +8,17 @@ import { IModelClient, DisplayInfo, StreamEvent } from './modelClient';
 import { getFrontmostAppUITree, AXElement } from './axClient';
 import Anthropic from '@anthropic-ai/sdk';
 
+export interface SimplifiedAXElement {
+  role?: string;
+  subrole?: string;
+  title?: string;
+  value?: string;
+  description?: string;
+  identifier?: string;
+  frame?: { x: number; y: number; width: number; height: number };
+  children?: (SimplifiedAXElement | string)[];
+}
+
 const SCREENSHOT_WIDTH = 1280;
 
 const sleep = (ms: number): Promise<void> =>
@@ -241,11 +252,11 @@ function describeClaudeAction(action: ClaudeAction): string {
   }
 }
 
-function simplifyAXTree(element: AXElement, depth = 0): any {
+function simplifyAXTree(element: AXElement, depth = 0): SimplifiedAXElement | string {
   if (element.truncated) return '...';
   if (depth > 6) return '...'; // Prune deep trees
 
-  const simplified: any = {
+  const simplified: SimplifiedAXElement = {
     role: element.role,
   };
 
@@ -295,7 +306,7 @@ function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
     const msg = messages[i];
     
     if (msg.role === 'assistant' && Array.isArray(msg.content)) {
-      const hasToolUse = msg.content.some((block: any) => block.type === 'tool_use');
+      const hasToolUse = msg.content.some((block) => block.type === 'tool_use');
       
       if (hasToolUse) {
         // Check if the next message is a user message with tool_result
@@ -311,12 +322,12 @@ function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
         // Check if the user message has matching tool_results
         if (Array.isArray(nextMsg.content)) {
           const toolUseIds = msg.content
-            .filter((block: any) => block.type === 'tool_use')
-            .map((block: any) => block.id);
+            .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
+            .map((block) => block.id);
           
           const toolResultIds = nextMsg.content
-            .filter((block: any) => block.type === 'tool_result')
-            .map((block: any) => block.tool_use_id);
+            .filter((block): block is Anthropic.ToolResultBlockParam => block.type === 'tool_result')
+            .map((block) => block.tool_use_id);
           
           const missingResults = toolUseIds.filter((id: string) => !toolResultIds.includes(id));
           
@@ -420,7 +431,13 @@ export async function processComputerUse(
         return { content: 'Task cancelled by user' };
       }
       
-      const apiError = err as any;
+      const apiError = err as {
+        status?: number;
+        type?: string;
+        requestId?: string;
+        error?: { message?: string };
+        message?: string;
+      };
       const errorDetails = {
         status: apiError.status,
         type: apiError.type,
@@ -448,7 +465,7 @@ export async function processComputerUse(
             if (secondLastMessage?.role === 'assistant') {
               const content = secondLastMessage.content;
               const hasToolUse = Array.isArray(content) && 
-                content.some((block: any) => block.type === 'tool_use');
+                content.some((block) => block.type === 'tool_use');
               
               if (hasToolUse && lastMessage?.role !== 'user') {
                 messages.pop();
