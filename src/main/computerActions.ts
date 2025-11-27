@@ -1,11 +1,11 @@
-import { mouse, keyboard, Key, Button, Point } from '@nut-tree-fork/nut-js';
+import { mouse, keyboard, Key, Button, Point, straightTo } from '@nut-tree-fork/nut-js';
 import { logEvent, logError } from './log';
 import { showClickIndicator, showTrail } from './cursorIndicator';
 
 // Configure nut.js defaults
 keyboard.config.autoDelayMs = 10;
 mouse.config.autoDelayMs = 10;
-mouse.config.mouseSpeed = 1000; // instant speed for movement as we manage it
+mouse.config.mouseSpeed = 2000; // Adjust speed for human-like movement
 
 
 function sleep(ms: number): Promise<void> {
@@ -142,7 +142,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
         const { x, y, button = 'left' } = action;
         logEvent('action_click', { x, y, button });
         showTrail(currentPos.x, currentPos.y, x!, y!);
-        await mouse.setPosition(new Point(x!, y!));
+        await mouse.move(straightTo(new Point(x!, y!)));
         showClickIndicator(x!, y!);
         await sleep(60);
         await mouse.click(
@@ -154,7 +154,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
         const { x, y } = action;
         logEvent('action_double_click', { x, y });
         showTrail(currentPos.x, currentPos.y, x!, y!);
-        await mouse.setPosition(new Point(x!, y!));
+        await mouse.move(straightTo(new Point(x!, y!)));
         showClickIndicator(x!, y!);
         await sleep(60);
         await mouse.doubleClick(Button.LEFT);
@@ -164,7 +164,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
         const { x, y } = action;
         logEvent('action_right_click', { x, y });
         showTrail(currentPos.x, currentPos.y, x!, y!);
-        await mouse.setPosition(new Point(x!, y!));
+        await mouse.move(straightTo(new Point(x!, y!)));
         showClickIndicator(x!, y!);
         await sleep(60);
         await mouse.click(Button.RIGHT);
@@ -174,7 +174,7 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
         const { x, y } = action;
         logEvent('action_move', { x, y });
         showTrail(currentPos.x, currentPos.y, x!, y!);
-        await mouse.setPosition(new Point(x!, y!));
+        await mouse.move(straightTo(new Point(x!, y!)));
         break;
       }
       case 'scroll': {
@@ -236,39 +236,17 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'drag': {
         const { startX, startY, endX, endY } = action;
         logEvent('action_drag', { startX, startY, endX, endY });
+        
+        // Move to start position
         showTrail(currentPos.x, currentPos.y, startX!, startY!);
-        await mouse.setPosition(new Point(startX!, startY!));
-        await sleep(250);
-        await mouse.pressButton(Button.LEFT);
-        logEvent('mouse_down', { x: startX, y: startY });
+        await mouse.move(straightTo(new Point(startX!, startY!)));
         await sleep(200);
+
+        // Perform drag
+        showTrail(startX!, startY!, endX!, endY!);
+        await mouse.drag(straightTo(new Point(endX!, endY!)));
         
-        // Draw visual trail during drag?
-        // The loop below updates position incrementally.
-        // We can trigger small trails.
-        
-        const dx = endX! - startX!;
-        const dy = endY! - startY!;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const steps = Math.max(20, Math.floor(distance / 20));
-        let prevX = startX!;
-        let prevY = startY!;
-        
-        for (let i = 1; i <= steps; i++) {
-          const t = i / steps;
-          const x = Math.round(startX! + dx * t);
-          const y = Math.round(startY! + dy * t);
-          
-          showTrail(prevX, prevY, x, y);
-          await mouse.setPosition(new Point(x, y));
-          prevX = x;
-          prevY = y;
-          
-          await sleep(25);
-        }
-        await sleep(200);
-        await mouse.releaseButton(Button.LEFT);
-        logEvent('mouse_up', { x: endX, y: endY });
+        // Wait for release to register
         await sleep(120);
         break;
       }
