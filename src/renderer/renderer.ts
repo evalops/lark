@@ -1,4 +1,4 @@
-import { Config, DeepPartial } from '../common/types.js';
+import { Config, DeepPartial, ToolActivity } from '../common/types.js';
 
 interface LarkAPI {
   askOpenAI: (prompt: string) => Promise<string>;
@@ -10,6 +10,7 @@ interface LarkAPI {
   getHistory: () => Promise<Array<{ role: string; content: string }>>;
   clearHistory: () => Promise<void>;
   onStatusUpdate: (callback: (status: string) => void) => void;
+  onToolActivity: (callback: (activity: ToolActivity) => void) => void;
   constants: { PILL_BASE_HEIGHT: number; APP_VERSION?: string };
   getConstants: () => Promise<{ PILL_BASE_HEIGHT: number; APP_VERSION: string }>;
   getConfigStatus: () => Promise<{ needsApiKey: boolean; hasApiKey: boolean; provider: string }>;
@@ -767,6 +768,40 @@ if (window.larkAPI?.onStatusUpdate) {
       const cleanStatus = status.replace(/^Step \d+:\s*/, '');
       input.placeholder = cleanStatus;
     }
+  });
+}
+
+if (window.larkAPI?.onToolActivity) {
+  window.larkAPI.onToolActivity((activity) => {
+    // Only show if we are loading/processing
+    if (!isLoading && activity.type !== 'finish') return;
+
+    if (activity.type === 'step') {
+      appendMessage('system', `Step ${activity.step}`);
+    } else if (activity.type === 'tool_use') {
+       // Format tool use nicely
+       // e.g. "Clicking (x, y)" or "Typing '...'"
+       let text = `Tool: ${activity.toolName}`;
+       if (activity.toolName === 'computer' && activity.toolInput) {
+           const action = activity.toolInput;
+           if (action.action === 'screenshot') text = '📷 Taking screenshot';
+           else if (action.action === 'type') text = `⌨️ Typing "${action.text}"`;
+           else if (action.action === 'key') text = `⌨️ Pressing ${action.text}`;
+           else if (action.action === 'left_click') text = `🖱️ Clicking`;
+           else text = `⚙️ ${action.action}`;
+       }
+       appendMessage('tool-use', text);
+    } else if (activity.type === 'tool_result') {
+        // Maybe don't show result unless it's an error
+        if (String(activity.toolOutput).startsWith('Error:')) {
+            appendMessage('tool-error', String(activity.toolOutput));
+        }
+    } else if (activity.type === 'finish') {
+        // Task complete handled by askOpenAI return mostly
+    }
+    
+    // Auto scroll
+    responseDiv.scrollTop = responseDiv.scrollHeight;
   });
 }
 

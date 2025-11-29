@@ -1,7 +1,7 @@
 import { screen } from 'electron';
 import { captureBase64 } from '../screen';
 import { logEvent, logError } from '../log';
-import { sendStatusUpdate, sendConfirmationRequest } from '../statusManager';
+import { sendStatusUpdate, sendConfirmationRequest, sendToolActivity } from '../statusManager';
 import { config } from '../config';
 import { executeComputerAction } from '../computerActions';
 import { IModelClient, DisplayInfo, StreamEvent } from './modelClient';
@@ -434,6 +434,7 @@ export async function processComputerUse(
 
     logEvent('agent_step_start', { step });
     sendStatusUpdate(`Step ${step}: Thinking...`);
+    sendToolActivity({ type: 'step', step });
 
     // Validate message history before sending to prevent 400 errors
     validateAndRepairMessages(messages);
@@ -559,9 +560,11 @@ export async function processComputerUse(
       if (textBlock?.text) {
         logEvent('task_complete', { step });
         sendStatusUpdate('Task complete');
+        sendToolActivity({ type: 'finish' });
         return { content: textBlock.text };
       }
       if (response.stopReason === 'end_turn') {
+        sendToolActivity({ type: 'finish' });
         return { content: 'Task completed' };
       }
       continue;
@@ -586,6 +589,12 @@ export async function processComputerUse(
       const action = toolUse.input as ClaudeAction;
       const actionDesc = describeClaudeAction(action);
       sendStatusUpdate(`Step ${step}: ${actionDesc}`);
+      sendToolActivity({ 
+        type: 'tool_use', 
+        step, 
+        toolName: toolUse.name, 
+        toolInput: action 
+      });
       logEvent('action', { step, action: action.action });
 
       try {
@@ -603,6 +612,12 @@ export async function processComputerUse(
                 source: { type: 'base64', media_type: 'image/jpeg', data: screenshot },
               },
             ],
+          });
+          sendToolActivity({
+            type: 'tool_result',
+            step,
+            toolName: toolUse.name,
+            toolOutput: 'screenshot_taken'
           });
         } else {
           const result = await executeClaudeAction(action, display);
@@ -627,17 +642,31 @@ export async function processComputerUse(
             ],
           });
           
+          sendToolActivity({
+            type: 'tool_result',
+            step,
+            toolName: toolUse.name,
+            toolOutput: result
+          });
+          
           // Force garbage collection of the raw screenshot string if possible (hint to V8)
           // Note: We can't actually modify the toolResults that are in the messages array because 
           // Anthropic needs the full context history. However, we can ensure we don't keep *duplicate* copies.
         }
       } catch (err) {
         logError('action_error', err as Error);
+        const errorMsg = String((err as Error)?.message || 'Action failed');
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: `Error: ${String((err as Error)?.message || 'Action failed')}`,
+          content: `Error: ${errorMsg}`,
           is_error: true,
+        });
+        sendToolActivity({
+          type: 'tool_result',
+          step,
+          toolName: toolUse.name,
+          toolOutput: `Error: ${errorMsg}`
         });
       }
     }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { Config, DeepPartial } from '../common/types';
+import { Config, DeepPartial, ToolActivity } from '../common/types';
 
 const api = {
   askOpenAI: (prompt: string) => ipcRenderer.invoke('ask-openai', prompt),
@@ -12,6 +12,9 @@ const api = {
   clearHistory: () => ipcRenderer.invoke('clear-history'),
   onStatusUpdate: (callback: (status: string) => void) => {
     ipcRenderer.on('status-update', (_event, status) => callback(status));
+  },
+  onToolActivity: (callback: (activity: ToolActivity) => void) => {
+    ipcRenderer.on('tool-activity', (_event, activity) => callback(activity));
   },
   constants: { PILL_BASE_HEIGHT: 60 },
   getConstants: () => ipcRenderer.invoke('get-constants'),

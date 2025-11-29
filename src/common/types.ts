@@ -26,3 +26,12 @@ export interface Config {
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
+
+export interface ToolActivity {
+  type: 'step' | 'tool_use' | 'tool_result' | 'finish';
+  step?: number;
+  toolName?: string;
+  toolInput?: any;
+  toolOutput?: any;
+  text?: string;
+}
