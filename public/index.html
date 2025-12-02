@@ -66,16 +66,14 @@
         <button id="settings-save" class="full-width-btn">Save Changes</button>
       </div>
 
-      <div id="confirmation-modal" class="settings-modal hidden">
-        <div class="settings-header">
-          <span>Confirm Action</span>
+      <div id="confirmation-banner" class="confirmation-banner hidden">
+        <div class="confirm-text">
+          <span class="dot pulse"></span>
+          <div id="confirmation-text">Allow this action?</div>
         </div>
-        <div class="settings-section">
-          <p id="confirmation-text" style="margin: 10px 0; color: #ccc; font-size: 14px; line-height: 1.4;">Allow this action?</p>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
-          <button id="confirm-deny" class="full-width-btn" style="background: #3a3a3c;">Deny</button>
-          <button id="confirm-allow" class="full-width-btn" style="background: #0A84FF;">Allow</button>
+        <div class="confirm-actions">
+          <button id="confirm-deny" class="pill-btn ghost">Deny</button>
+          <button id="confirm-allow" class="pill-btn primary">Allow</button>
         </div>
       </div>
 

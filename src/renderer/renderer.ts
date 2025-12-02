@@ -18,7 +18,7 @@ interface LarkAPI {
   quitApp: () => Promise<void>;
   getConfig: () => Promise<Config>;
   saveConfig: (updates: DeepPartial<Config>) => Promise<{ success: boolean; error?: string }>;
-  onConfirmationRequest: (callback: (request: string) => void) => void;
+  onConfirmationRequest: (callback: (request: string) => void) => void | (() => void);
   respondToConfirmation: (allowed: boolean) => Promise<void>;
 }
 
@@ -71,7 +71,7 @@ const settingDelay = must(document.getElementById('setting-delay') as HTMLInputE
 const settingConfirmDangerous = must(document.getElementById('setting-confirm-dangerous') as HTMLInputElement, 'setting-confirm-dangerous');
 const settingApiKey = must(document.getElementById('setting-api-key') as HTMLInputElement, 'setting-api-key');
 
-const confirmationModal = must(document.getElementById('confirmation-modal'), 'confirmation-modal');
+const confirmationBanner = must(document.getElementById('confirmation-banner'), 'confirmation-banner');
 const confirmationText = must(document.getElementById('confirmation-text'), 'confirmation-text');
 const confirmAllow = must(document.getElementById('confirm-allow') as HTMLButtonElement, 'confirm-allow');
 const confirmDeny = must(document.getElementById('confirm-deny') as HTMLButtonElement, 'confirm-deny');
@@ -931,8 +931,8 @@ async function checkConfigStatus(): Promise<void> {
 if (window.larkAPI?.onConfirmationRequest) {
   window.larkAPI.onConfirmationRequest((request) => {
     confirmationText.textContent = request;
-    confirmationModal.classList.remove('hidden');
-    pill.classList.add('showing-settings'); // Reuse expanded state
+    confirmationBanner.classList.remove('hidden');
+    pill.classList.add('showing-response');
     pill.classList.remove('collapsed');
     pill.classList.add('expanded');
     requestAnimationFrame(() => fitWindowToPill());
@@ -940,10 +940,20 @@ if (window.larkAPI?.onConfirmationRequest) {
 }
 
 function handleConfirmation(allowed: boolean) {
-  confirmationModal.classList.add('hidden');
-  pill.classList.remove('showing-settings');
+  confirmationBanner.classList.add('hidden');
+  if (!responseDiv.classList.contains('hidden')) {
+    pill.classList.add('showing-response');
+  } else {
+    pill.classList.remove('showing-response');
+  }
   setWindowBaseHeight();
   window.larkAPI.respondToConfirmation(allowed);
+
+  const decision = allowed ? 'Approved' : 'Blocked';
+  const timestamp = new Date().toLocaleTimeString();
+  responseDiv.classList.remove('hidden');
+  setShowingResponse(true);
+  appendMessage('system', `${decision}: ${confirmationText.textContent} (${timestamp})`);
 }
 
 confirmAllow.addEventListener('click', () => handleConfirmation(true));
