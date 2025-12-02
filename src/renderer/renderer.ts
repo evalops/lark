@@ -931,12 +931,20 @@ async function checkConfigStatus(): Promise<void> {
 if (window.larkAPI?.onConfirmationRequest) {
   window.larkAPI.onConfirmationRequest((request) => {
     confirmationText.textContent = request;
+    applyConfirmationTone(request);
     confirmationBanner.classList.remove('hidden');
     pill.classList.add('showing-response');
     pill.classList.remove('collapsed');
     pill.classList.add('expanded');
     requestAnimationFrame(() => fitWindowToPill());
   });
+}
+
+function applyConfirmationTone(message: string): void {
+  const lowered = message.toLowerCase();
+  const warningKeywords = ['block', 'danger', 'destructive', 'delete', 'quit', 'close', 'esc', 'escape', 'cmd', 'alt+f4', 'cmd+q'];
+  const level = warningKeywords.some((kw) => lowered.includes(kw)) ? 'warning' : 'info';
+  confirmationBanner.dataset.level = level;
 }
 
 function handleConfirmation(allowed: boolean) {
