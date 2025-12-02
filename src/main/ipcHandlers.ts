@@ -1,4 +1,4 @@
-import { ipcMain, app, screen, BrowserWindow } from 'electron';
+import { ipcMain, app, screen, BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import fsp from 'fs/promises';
@@ -26,6 +26,22 @@ interface IpcContext {
 
 let history: HistoryMessage[] = [];
 let lastSessionMessages: Anthropic.MessageParam[] | null = null;
+
+function ensureTrusted(event: IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url ?? '';
+  const trusted = url.startsWith('file://');
+  if (!trusted) {
+    logError('ipc_untrusted_origin', new Error('Rejected IPC from untrusted origin'), { url });
+    throw new Error('Untrusted renderer origin');
+  }
+}
+
+function assertPayload(condition: boolean, channel: string, detail: string): void {
+  if (!condition) {
+    logError('ipc_invalid_payload', new Error(detail), { channel });
+    throw new Error(detail);
+  }
+}
 
 function historyPath(): string {
   return path.join(app.getPath('userData'), 'history.json');
@@ -67,7 +83,9 @@ export { loadHistory };
 
 export function registerIpcHandlers(ctx: IpcContext): void {
   // Computer use handler
-  ipcMain.handle('ask-openai', async (_event, prompt: unknown) => {
+  ipcMain.handle('ask-openai', async (event, prompt: unknown) => {
+    ensureTrusted(event);
+    assertPayload(typeof prompt === 'string', 'ask-openai', 'Prompt must be a string');
     try {
       const p = typeof prompt === 'string' ? prompt.trim() : '';
       if (!p) {
@@ -163,7 +181,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Stop computer use
-  ipcMain.handle('stop-computer-use', async () => {
+  ipcMain.handle('stop-computer-use', async (event) => {
+    ensureTrusted(event);
     const controller = ctx.getAbortController();
     if (controller) {
       controller.abort();
@@ -175,12 +194,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Mouse control
-  ipcMain.handle('control-mouse', async (_event, coords: unknown) => {
+  ipcMain.handle('control-mouse', async (event, coords: unknown) => {
+    ensureTrusted(event);
     try {
       const c = coords as { x?: number; y?: number };
       let x = Number(c?.x);
       let y = Number(c?.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Invalid coordinates');
+      assertPayload(Number.isFinite(x) && Number.isFinite(y), 'control-mouse', 'Invalid coordinates');
 
       const display = screen.getPrimaryDisplay();
       const wa = display.workArea;
@@ -198,7 +218,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Keyboard control
-  ipcMain.handle('control-keyboard', async (_event, text: unknown) => {
+  ipcMain.handle('control-keyboard', async (event, text: unknown) => {
+    ensureTrusted(event);
+    assertPayload(typeof text === 'string', 'control-keyboard', 'Text must be a string');
     const t = typeof text === 'string' ? text : '';
     const toType = t.slice(0, config.ui.maxTypeLength);
     try {
@@ -213,7 +235,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Screen capture
-  ipcMain.handle('capture-screen', async () => {
+  ipcMain.handle('capture-screen', async (event) => {
+    ensureTrusted(event);
     try {
       const imgPath = path.join(app.getPath('pictures'), `capture-${Date.now()}.png`);
       await captureToFile(imgPath);
@@ -226,12 +249,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Window resize
-  ipcMain.handle('resize-window', (_event, requestedHeight: unknown) => {
+  ipcMain.handle('resize-window', (event, requestedHeight: unknown) => {
+    ensureTrusted(event);
     const win = ctx.getWindow();
     if (!win) return;
     try {
       const reqH = Number(requestedHeight);
-      if (!Number.isFinite(reqH)) return;
+      assertPayload(Number.isFinite(reqH), 'resize-window', 'Height must be numeric');
 
       const bounds = win.getBounds();
       const minH = config.ui.pillBaseHeight;
@@ -250,7 +274,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // History handlers
-  ipcMain.handle('get-history', async () => {
+  ipcMain.handle('get-history', async (event) => {
+    ensureTrusted(event);
     try {
       if (!history.length) await loadHistory();
       return history.slice(-config.ui.maxHistoryEntries);
@@ -260,7 +285,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   });
 
-  ipcMain.handle('clear-history', async () => {
+  ipcMain.handle('clear-history', async (event) => {
+    ensureTrusted(event);
     try {
       history = [];
       await saveHistory();
@@ -271,13 +297,17 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Constants
-  ipcMain.handle('get-constants', async () => ({
-    PILL_BASE_HEIGHT: config.ui.pillBaseHeight,
-    APP_VERSION: app.getVersion(),
-  }));
+  ipcMain.handle('get-constants', async (event) => {
+    ensureTrusted(event);
+    return {
+      PILL_BASE_HEIGHT: config.ui.pillBaseHeight,
+      APP_VERSION: app.getVersion(),
+    };
+  });
 
   // Config status
-  ipcMain.handle('get-config-status', async () => {
+  ipcMain.handle('get-config-status', async (event) => {
+    ensureTrusted(event);
     const provider = config.model.provider;
     const needsApiKey = true;
     const hasApiKey = provider === 'claude' 
@@ -288,13 +318,16 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Get full config
-  ipcMain.handle('get-config', async () => {
+  ipcMain.handle('get-config', async (event) => {
+    ensureTrusted(event);
     return config;
   });
 
   // Save config
-    ipcMain.handle('save-config', async (_, updates: unknown) => {
+  ipcMain.handle('save-config', async (event, updates: unknown) => {
+    ensureTrusted(event);
     try {
+      assertPayload(typeof updates === 'object' && updates !== null, 'save-config', 'Config update must be an object');
       const newConfig = updates as DeepPartial<Config>;
       saveUserConfig(newConfig);
       ctx.initializeModelClient();
@@ -306,9 +339,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   // Save API key (Legacy/Specific wrapper - maps to current provider)
-  ipcMain.handle('save-api-key', async (_event, apiKey: unknown) => {
+  ipcMain.handle('save-api-key', async (event, apiKey: unknown) => {
+    ensureTrusted(event);
     try {
       const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+      assertPayload(typeof apiKey === 'string', 'save-api-key', 'API key must be a string');
       if (!key) {
         return { success: false, error: 'API key cannot be empty' };
       }
@@ -332,11 +367,14 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   });
 
-  ipcMain.handle('quit-app', () => {
+  ipcMain.handle('quit-app', (event) => {
+    ensureTrusted(event);
     app.quit();
   });
 
-  ipcMain.handle('respond-to-confirmation', (_event, allowed: unknown) => {
+  ipcMain.handle('respond-to-confirmation', (event, allowed: unknown) => {
+    ensureTrusted(event);
+    assertPayload(typeof allowed === 'boolean', 'respond-to-confirmation', 'Confirmation payload must be boolean');
     resolveConfirmation(!!allowed);
   });
 }

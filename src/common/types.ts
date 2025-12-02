@@ -6,6 +6,9 @@ export interface Config {
     maxSteps: number; 
     minStepDelayMs: number;
     confirmDangerousActions: boolean;
+    maxRuntimeMs: number;
+    idleTimeoutMs: number;
+    maxConsecutiveErrors: number;
   };
   ui: {
     pillBaseHeight: number;

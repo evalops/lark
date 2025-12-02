@@ -47,6 +47,53 @@ const toModifier = (token: string): Key | null =>
 
 const toKey = (token: string): Key | null => keyMap[normalizeLookup(token)] ?? null;
 
+export interface ParsedKeypress {
+  key: string;
+  modifiers: string[];
+  chord: boolean;
+}
+
+export function parseKeypressSequence(keys: string[]): ParsedKeypress[] {
+  const actions: ParsedKeypress[] = [];
+  const sequence = (keys ?? []).map((key) => String(key)).filter((key) => key.length > 0);
+
+  for (let i = 0; i < sequence.length; i++) {
+    const token = sequence[i];
+    if (token.includes('+')) {
+      const parts = token
+        .split('+')
+        .map((part) => normalizeLookup(part))
+        .filter(Boolean);
+      const main = parts.pop();
+      if (main) {
+        actions.push({ key: main, modifiers: parts, chord: true });
+      }
+      continue;
+    }
+
+    const normalized = normalizeLookup(token);
+    if (modifierMap[normalized]) {
+      const mods: string[] = [normalized];
+      while (i + 1 < sequence.length) {
+        const nextToken = normalizeLookup(sequence[i + 1]);
+        if (!modifierMap[nextToken]) break;
+        mods.push(nextToken);
+        i++;
+      }
+      const nextKey = sequence[i + 1];
+      if (nextKey !== undefined) {
+        i++;
+        actions.push({ key: normalizeLookup(nextKey), modifiers: mods, chord: true });
+      }
+      continue;
+    }
+
+    actions.push({ key: normalized, modifiers: [], chord: false });
+  }
+
+  return actions;
+}
+
 async function pressAndReleaseKey(target: string, modifiers: Key[] = []): Promise<void> {
   const mappedKey = toKey(target);
   if (mappedKey) {
@@ -54,7 +101,7 @@ async function pressAndReleaseKey(target: string, modifiers: Key[] = []): Promis
       throw new Error('Pressing Escape is restricted to prevent triggering the emergency stop.');
     }
     if ((mappedKey as number) === (Key.X as number)) {
-      throw new Error('Pressing X is restricted.');
+      throw new Error('Pressing X is restricted to avoid destructive shortcuts.');
     }
     await keyboard.pressKey(...modifiers, mappedKey);
     if (arrowKeys.has(mappedKey) && modifiers.length === 0) {
@@ -108,16 +155,6 @@ async function pressAndReleaseKey(target: string, modifiers: Key[] = []): Promis
   } else {
     await keyboard.type(target);
   }
-}
-
-async function handleChordExpression(token: string): Promise<void> {
-  const parts = token.split('+').map((part) => part.trim()).filter(Boolean);
-  if (parts.length === 0) return;
-  const main = parts.pop()!;
-  const modifiers = parts
-    .map((part) => toModifier(part))
-    .filter((key): key is Key => Boolean(key));
-  await pressAndReleaseKey(main, modifiers);
 }
 
 export interface ComputerAction {
@@ -202,39 +239,12 @@ export async function executeComputerAction(action: ComputerAction): Promise<voi
       case 'keypress': {
         const { keys } = action;
         logEvent('action_keypress', { keys });
-        const sequence = (keys ?? []).map((key) => String(key)).filter((key) => key.length > 0);
-        for (let i = 0; i < sequence.length; i++) {
-          const token = sequence[i];
-          if (token.includes('+')) {
-            await handleChordExpression(token);
-            continue;
-          }
-          const collectedModifiers: Key[] = [];
-          const lookahead = toModifier(token);
-          let consumed = false;
-          if (lookahead) {
-            collectedModifiers.push(lookahead);
-            consumed = true;
-            while (i + 1 < sequence.length) {
-              const nextMod = toModifier(sequence[i + 1]);
-              if (!nextMod) break;
-              collectedModifiers.push(nextMod);
-              i++;
-            }
-          }
-          if (collectedModifiers.length > 0) {
-            const nextKey = consumed ? sequence[++i] : sequence[i];
-            if (nextKey !== undefined) {
-              await pressAndReleaseKey(nextKey, collectedModifiers);
-              continue;
-            }
-            for (const modKey of collectedModifiers) {
-              await keyboard.pressKey(modKey);
-              await keyboard.releaseKey(modKey);
-            }
-            continue;
-          }
-          await pressAndReleaseKey(token);
+        const parsedSequence = parseKeypressSequence(keys ?? []);
+        for (const parsed of parsedSequence) {
+          const modifiers = parsed.modifiers
+            .map((mod) => toModifier(mod))
+            .filter((key): key is Key => Boolean(key));
+          await pressAndReleaseKey(parsed.key, modifiers);
         }
         break;
       }

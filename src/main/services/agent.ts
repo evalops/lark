@@ -22,15 +22,82 @@ async function askUserConfirmation(description: string): Promise<boolean> {
   });
 }
 
-function isDangerousAction(action: ClaudeAction): boolean {
-  if (action.action !== 'key' && action.action !== 'hold_key') return false;
+interface ActionSafety {
+  dangerous: boolean;
+  requiresConfirmation: boolean;
+  hardBlock: boolean;
+  reason?: string;
+}
+
+function normalizeKeyToken(token: string): string {
+  return token.trim().toLowerCase();
+}
+
+function parseKeyChord(text: string | undefined): string[] {
+  if (!text) return [];
+  return text
+    .split('+')
+    .map((k) => normalizeKeyToken(k))
+    .filter(Boolean);
+}
+
+function assessActionSafety(action: ClaudeAction): ActionSafety {
+  if (action.action !== 'key' && action.action !== 'hold_key') {
+    return { dangerous: false, requiresConfirmation: false, hardBlock: false };
+  }
   
-  const text = (action.text || '').toLowerCase();
-  const dangerousKeys = ['return', 'enter', 'delete', 'backspace'];
-  
-  // Check if any part of the key sequence involves a dangerous key
-  const keys = text.split('+').map(k => k.trim().toLowerCase());
-  return keys.some(k => dangerousKeys.includes(k));
+  const keys = parseKeyChord(action.text);
+  const dangerousKeys = new Set(['return', 'enter', 'delete', 'backspace', 'escape']);
+  const modifierKeys = new Set(['cmd', 'command', 'meta', 'ctrl', 'control', 'alt', 'option', 'shift']);
+
+  const hasModifier = keys.some((k) => modifierKeys.has(k));
+  const baseKey = keys[keys.length - 1];
+  const hasDangerKey = keys.some((k) => dangerousKeys.has(k));
+
+  const chord = keys.join('+');
+  const destructiveChords = new Set([
+    'cmd+q',
+    'command+q',
+    'cmd+w',
+    'command+w',
+    'cmd+shift+q',
+    'command+shift+q',
+    'alt+f4',
+    'option+f4',
+    'ctrl+alt+delete',
+    'control+alt+delete',
+    'cmd+option+esc',
+    'command+option+esc',
+  ]);
+
+  if (destructiveChords.has(chord)) {
+    return {
+      dangerous: true,
+      requiresConfirmation: true,
+      hardBlock: true,
+      reason: `Shortcut ${chord} is blocked because it can close apps or system dialogs.`,
+    };
+  }
+
+  if (baseKey === 'x') {
+    return {
+      dangerous: true,
+      requiresConfirmation: true,
+      hardBlock: true,
+      reason: 'Pressing X is blocked to avoid unintended cut/close actions.',
+    };
+  }
+
+  if (hasDangerKey || hasModifier) {
+    return {
+      dangerous: true,
+      requiresConfirmation: true,
+      hardBlock: false,
+      reason: 'Destructive or system-affecting keypress detected.',
+    };
+  }
+
+  return { dangerous: false, requiresConfirmation: false, hardBlock: false };
 }
 
 import { getFrontmostAppUITree, AXElement } from './axClient';
@@ -47,7 +114,8 @@ export interface SimplifiedAXElement {
   children?: (SimplifiedAXElement | string)[];
 }
 
-const SCREENSHOT_WIDTH = 1280;
+const SCREENSHOT_WIDTH = 960;
+const SCREENSHOT_QUALITY = 65;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -118,9 +186,16 @@ async function executeClaudeAction(
 ): Promise<string> {
   const scale = display.screenshotScale;
 
-  if (config.agent.confirmDangerousActions && isDangerousAction(action)) {
+  const safety = assessActionSafety(action);
+  if (safety.hardBlock) {
+    logEvent('dangerous_action_blocked', { action: action.text, reason: safety.reason });
+    return safety.reason ? `Blocked: ${safety.reason}` : 'Action blocked by safety policy';
+  }
+
+  if (config.agent.confirmDangerousActions && safety.dangerous && safety.requiresConfirmation) {
     const desc = describeClaudeAction(action);
-    const allowed = await askUserConfirmation(desc);
+    const prompt = safety.reason ? `${desc}\n\nReason: ${safety.reason}` : desc;
+    const allowed = await askUserConfirmation(prompt);
     if (!allowed) {
       return 'Action denied by user';
     }
@@ -334,7 +409,7 @@ function simplifyAXTree(element: AXElement, depth = 0): SimplifiedAXElement | st
   return simplified;
 }
 
-function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
+export function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
   // Ensure tool_use blocks are always followed by tool_result blocks
   // This prevents 400 errors from the API
   
@@ -379,6 +454,64 @@ function validateAndRepairMessages(messages: Anthropic.MessageParam[]): void {
   }
 }
 
+function pruneHistoricalImages(messages: Anthropic.MessageParam[], keepImages = 4): void {
+  let retained = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'user' || !Array.isArray(msg.content)) continue;
+    let modified = false;
+
+    const newContent = msg.content.map((block) => {
+      if ((block as Anthropic.ImageBlockParam).type === 'image') {
+        retained++;
+        if (retained > keepImages && i > 0) {
+          modified = true;
+          return { type: 'text' as const, text: 'Screenshot omitted to reduce context size.' };
+        }
+        return block;
+      }
+
+      if ((block as Anthropic.ToolResultBlockParam).type === 'tool_result') {
+        const toolBlock = block as Anthropic.ToolResultBlockParam;
+        const contentArray = Array.isArray(toolBlock.content)
+          ? toolBlock.content
+          : typeof toolBlock.content === 'string'
+          ? [{ type: 'text', text: toolBlock.content }]
+          : [];
+
+        const imageCount = contentArray.filter(
+          (inner) => (inner as Anthropic.ImageBlockParam).type === 'image'
+        ).length;
+
+        if (imageCount > 0) {
+          retained += imageCount;
+          if (retained > keepImages && i > 0) {
+            modified = true;
+            const textSummary = contentArray
+              .filter((inner) => (inner as Anthropic.TextBlockParam).type === 'text')
+              .map((inner) => (inner as Anthropic.TextBlockParam).text)
+              .join(' ');
+            const summaryText =
+              textSummary.length > 0
+                ? `${textSummary} (screenshot omitted to save context).`
+                : 'Screenshot omitted to reduce context size.';
+            return {
+              ...toolBlock,
+              content: [{ type: 'text' as const, text: summaryText }],
+            };
+          }
+        }
+      }
+
+      return block;
+    });
+
+    if (modified) {
+      messages[i] = { ...msg, content: newContent };
+    }
+  }
+}
+
 export interface ProcessResult {
   content: string;
   shouldResume?: boolean;
@@ -395,6 +528,16 @@ export async function processComputerUse(
   const messages: Anthropic.MessageParam[] = initialMessages ? [...initialMessages] : [];
   const maxSteps = config.agent?.maxSteps ?? 20;
   const minStepDelay = Math.max(0, config.agent?.minStepDelayMs ?? 0);
+  const maxRuntimeMs = Math.max(60_000, config.agent?.maxRuntimeMs ?? 5 * 60_000);
+  const idleTimeoutMs = Math.max(15_000, config.agent?.idleTimeoutMs ?? 60_000);
+  const maxConsecutiveErrors = Math.max(1, config.agent?.maxConsecutiveErrors ?? 5);
+  const startTime = Date.now();
+  let lastProgressAt = startTime;
+  let consecutiveErrorSteps = 0;
+
+  const markProgress = (): void => {
+    lastProgressAt = Date.now();
+  };
 
   logEvent('agent_start', { prompt, isResume: !!initialMessages });
 
@@ -404,6 +547,7 @@ export async function processComputerUse(
     const initialScreenshot = await captureBase64({
       width: display.width,
       height: display.height,
+      quality: SCREENSHOT_QUALITY,
     });
 
     const uiTree = await getFrontmostAppUITree();
@@ -424,12 +568,27 @@ export async function processComputerUse(
         },
       ],
     });
+
+    markProgress();
   }
 
   for (let step = 1; step <= maxSteps; step++) {
     if (abortSignal?.aborted) {
       sendStatusUpdate('Cancelled');
       return { content: 'Task cancelled by user' };
+    }
+
+    const now = Date.now();
+    if (now - startTime > maxRuntimeMs) {
+      logEvent('agent_runtime_exceeded', { elapsedMs: now - startTime });
+      sendStatusUpdate('Stopped: max runtime reached');
+      return { content: 'Stopped to keep session under the runtime limit' };
+    }
+
+    if (now - lastProgressAt > idleTimeoutMs) {
+      logEvent('agent_idle_timeout', { idleMs: now - lastProgressAt });
+      sendStatusUpdate('Stopped: no progress detected');
+      return { content: 'Stopped because no progress was detected for too long' };
     }
 
     logEvent('agent_step_start', { step });
@@ -446,8 +605,10 @@ export async function processComputerUse(
         const preview =
           streamingText.length > 50 ? streamingText.slice(-50) + '...' : streamingText;
         sendStatusUpdate(`Step ${step}: ${preview}`);
+        markProgress();
       } else if (event.type === 'tool_use_start') {
         sendStatusUpdate(`Step ${step}: ${event.name}...`);
+        markProgress();
       }
     };
 
@@ -602,6 +763,7 @@ export async function processComputerUse(
           const screenshot = await captureBase64({
             width: display.width,
             height: display.height,
+            quality: SCREENSHOT_QUALITY,
           });
           toolResults.push({
             type: 'tool_result',
@@ -613,6 +775,7 @@ export async function processComputerUse(
               },
             ],
           });
+          markProgress();
           sendToolActivity({
             type: 'tool_result',
             step,
@@ -624,6 +787,7 @@ export async function processComputerUse(
           const screenshot = await captureBase64({
             width: display.width,
             height: display.height,
+            quality: SCREENSHOT_QUALITY,
           });
           
           // Clear the large base64 data from the screenshot tool result after it's been sent to the model
@@ -641,6 +805,8 @@ export async function processComputerUse(
               },
             ],
           });
+          
+          markProgress();
           
           sendToolActivity({
             type: 'tool_result',
@@ -662,6 +828,7 @@ export async function processComputerUse(
           content: `Error: ${errorMsg}`,
           is_error: true,
         });
+        markProgress();
         sendToolActivity({
           type: 'tool_result',
           step,
@@ -672,6 +839,30 @@ export async function processComputerUse(
     }
 
     messages.push({ role: 'user', content: toolResults });
+
+    const stepHadError = toolResults.some((tr) => {
+      if ((tr as Anthropic.ToolResultBlockParam).is_error) return true;
+      if (typeof tr.content === 'string') {
+        return tr.content.toLowerCase().includes('error');
+      }
+      if (Array.isArray(tr.content)) {
+        return tr.content.some(
+          (c) =>
+            (c as Anthropic.TextBlockParam).type === 'text' &&
+            (c as Anthropic.TextBlockParam).text.toLowerCase().includes('error')
+        );
+      }
+      return false;
+    });
+
+    consecutiveErrorSteps = stepHadError ? consecutiveErrorSteps + 1 : 0;
+    if (stepHadError && consecutiveErrorSteps >= maxConsecutiveErrors) {
+      logEvent('agent_error_threshold_exceeded', { consecutiveErrorSteps });
+      sendStatusUpdate('Stopped: too many tool errors');
+      return { content: 'Stopped after repeated tool failures' };
+    }
+
+    pruneHistoricalImages(messages, 4);
 
     if (minStepDelay > 0) {
       await sleep(minStepDelay);

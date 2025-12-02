@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import dotenv from 'dotenv';
+import { spawnSync } from 'child_process';
 
 const cliDefinedKeys = new Set(Object.keys(process.env));
 
@@ -82,6 +83,46 @@ function str(envVar: string | undefined, fallback: string): string {
   return envVar && envVar.length > 0 ? envVar : fallback;
 }
 
+const KEYCHAIN_SERVICE = 'Lark';
+
+function readKeychainSecret(account: string): string | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const result = spawnSync(
+      'security',
+      ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', account, '-w'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.trim();
+    }
+  } catch (err) {
+    console.warn(`Unable to read ${account} from Keychain`, err);
+  }
+  return null;
+}
+
+function writeKeychainSecret(account: string, value: string): boolean {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const result = spawnSync(
+      'security',
+      ['add-generic-password', '-U', '-s', KEYCHAIN_SERVICE, '-a', account, '-w', value],
+      { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] }
+    );
+    return result.status === 0;
+  } catch (err) {
+    console.warn(`Unable to write ${account} to Keychain`, err);
+    return false;
+  }
+}
+
+function getSecret(envKey: string, account: string): string {
+  const fromEnv = str(process.env[envKey], '');
+  if (fromEnv) return fromEnv;
+  return readKeychainSecret(account) ?? '';
+}
+
 import { Config, DeepPartial } from '../common/types';
 
 export { Config, DeepPartial };
@@ -95,17 +136,20 @@ function buildConfig(): Config {
       provider: (process.env.MODEL_PROVIDER as 'claude' | 'gemini') || 'claude',
     },
     claude: {
-      apiKey: str(process.env.ANTHROPIC_API_KEY, ''),
+      apiKey: getSecret('ANTHROPIC_API_KEY', 'ANTHROPIC_API_KEY'),
       model: str(process.env.CLAUDE_MODEL, 'claude-opus-4-5-20251101'),
     },
     gemini: {
-      apiKey: str(process.env.GEMINI_API_KEY, ''),
+      apiKey: getSecret('GEMINI_API_KEY', 'GEMINI_API_KEY'),
       model: str(process.env.GEMINI_MODEL, 'gemini-2.0-flash-exp'),
     },
     agent: {
-      maxSteps: num(process.env.CUA_MAX_STEPS, 1000),
+      maxSteps: num(process.env.CUA_MAX_STEPS, 200),
       minStepDelayMs: num(process.env.AGENT_MIN_STEP_DELAY_MS, 1000),
       confirmDangerousActions: str(process.env.CONFIRM_DANGEROUS_ACTIONS, 'true') === 'true',
+      maxRuntimeMs: num(process.env.AGENT_MAX_RUNTIME_MS, 5 * 60 * 1000),
+      idleTimeoutMs: num(process.env.AGENT_IDLE_TIMEOUT_MS, 60 * 1000),
+      maxConsecutiveErrors: num(process.env.AGENT_MAX_CONSECUTIVE_ERRORS, 5),
     },
     ui: {
       pillBaseHeight: num(process.env.PILL_BASE_HEIGHT, 60),
@@ -163,15 +207,32 @@ export function saveUserConfig(updates: DeepPartial<Config>): void {
   // Update values
   if (updates.model?.provider !== undefined) parsed.MODEL_PROVIDER = updates.model.provider;
   
-  if (updates.claude?.apiKey !== undefined) parsed.ANTHROPIC_API_KEY = updates.claude.apiKey;
+  if (updates.claude?.apiKey !== undefined) {
+    const stored = writeKeychainSecret('ANTHROPIC_API_KEY', updates.claude.apiKey);
+    if (!stored) {
+      parsed.ANTHROPIC_API_KEY = updates.claude.apiKey;
+    } else {
+      delete parsed.ANTHROPIC_API_KEY;
+    }
+  }
   if (updates.claude?.model !== undefined) parsed.CLAUDE_MODEL = updates.claude.model;
   
-  if (updates.gemini?.apiKey !== undefined) parsed.GEMINI_API_KEY = updates.gemini.apiKey;
+  if (updates.gemini?.apiKey !== undefined) {
+    const stored = writeKeychainSecret('GEMINI_API_KEY', updates.gemini.apiKey);
+    if (!stored) {
+      parsed.GEMINI_API_KEY = updates.gemini.apiKey;
+    } else {
+      delete parsed.GEMINI_API_KEY;
+    }
+  }
   if (updates.gemini?.model !== undefined) parsed.GEMINI_MODEL = updates.gemini.model;
   
   if (updates.agent?.maxSteps !== undefined) parsed.CUA_MAX_STEPS = String(updates.agent.maxSteps);
   if (updates.agent?.minStepDelayMs !== undefined) parsed.AGENT_MIN_STEP_DELAY_MS = String(updates.agent.minStepDelayMs);
   if (updates.agent?.confirmDangerousActions !== undefined) parsed.CONFIRM_DANGEROUS_ACTIONS = String(updates.agent.confirmDangerousActions);
+  if (updates.agent?.maxRuntimeMs !== undefined) parsed.AGENT_MAX_RUNTIME_MS = String(updates.agent.maxRuntimeMs);
+  if (updates.agent?.idleTimeoutMs !== undefined) parsed.AGENT_IDLE_TIMEOUT_MS = String(updates.agent.idleTimeoutMs);
+  if (updates.agent?.maxConsecutiveErrors !== undefined) parsed.AGENT_MAX_CONSECUTIVE_ERRORS = String(updates.agent.maxConsecutiveErrors);
 
   // Ensure directory exists
   const dir = path.dirname(userEnvPath);
@@ -184,7 +245,12 @@ export function saveUserConfig(updates: DeepPartial<Config>): void {
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
   
-  fs.writeFileSync(userEnvPath, newContent);
+  fs.writeFileSync(userEnvPath, newContent, { mode: 0o600 });
+  try {
+    fs.chmodSync(userEnvPath, 0o600);
+  } catch {
+    // Best-effort; continue even if chmod fails
+  }
   
   // Update current process.env so refreshConfig picks it up
   Object.entries(parsed).forEach(([key, value]) => {

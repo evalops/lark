@@ -11,10 +11,14 @@ const api = {
   getHistory: () => ipcRenderer.invoke('get-history'),
   clearHistory: () => ipcRenderer.invoke('clear-history'),
   onStatusUpdate: (callback: (status: string) => void) => {
-    ipcRenderer.on('status-update', (_event, status) => callback(status));
+    const handler = (_event: unknown, status: string) => callback(status);
+    ipcRenderer.on('status-update', handler);
+    return () => ipcRenderer.removeListener('status-update', handler);
   },
   onToolActivity: (callback: (activity: ToolActivity) => void) => {
-    ipcRenderer.on('tool-activity', (_event, activity) => callback(activity));
+    const handler = (_event: unknown, activity: ToolActivity) => callback(activity);
+    ipcRenderer.on('tool-activity', handler);
+    return () => ipcRenderer.removeListener('tool-activity', handler);
   },
   constants: { PILL_BASE_HEIGHT: 60 },
   getConstants: () => ipcRenderer.invoke('get-constants'),
@@ -24,7 +28,9 @@ const api = {
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (updates: DeepPartial<Config>) => ipcRenderer.invoke('save-config', updates),
   onConfirmationRequest: (callback: (request: string) => void) => {
-    ipcRenderer.on('confirmation-request', (_event, request) => callback(request));
+    const handler = (_event: unknown, request: string) => callback(request);
+    ipcRenderer.on('confirmation-request', handler);
+    return () => ipcRenderer.removeListener('confirmation-request', handler);
   },
   respondToConfirmation: (allowed: boolean) => ipcRenderer.invoke('respond-to-confirmation', allowed),
 };

@@ -7,6 +7,10 @@ interface ResizeOptions {
   height?: number;
 }
 
+interface CaptureOptions extends ResizeOptions {
+  quality?: number;
+}
+
 function resizeToFit(img: NativeImage, maxW?: number, maxH?: number): NativeImage {
   if (!maxW && !maxH) return img;
   const size = img.getSize();
@@ -40,7 +44,7 @@ export async function capturePngBuffer(resize?: ResizeOptions): Promise<Buffer> 
 }
 
 export async function captureBase64(
-  resize: ResizeOptions = { width: 1280, height: 720 }
+  resize: CaptureOptions = { width: 960, height: 720, quality: 65 }
 ): Promise<string> {
   await hideOverlay();
   try {
@@ -49,7 +53,8 @@ export async function captureBase64(
     if (resize && (resize.width || resize.height)) {
       img = resizeToFit(img, resize.width, resize.height);
     }
-    return img.toJPEG(80).toString('base64');
+    const quality = Math.max(40, Math.min(Number(resize.quality ?? 80), 95));
+    return img.toJPEG(quality).toString('base64');
   } finally {
     showOverlay();
   }
