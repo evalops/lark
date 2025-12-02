@@ -4,6 +4,7 @@
   "description": "Native macOS client for Claude computer use",
   "author": "Jonathan",
   "license": "MIT",
+  "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "npm run build && electron .",
