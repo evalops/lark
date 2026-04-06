@@ -24,6 +24,25 @@ export interface Config {
     dragMinSteps: number;
     dragStepPixels: number;
   };
+  screenshot: {
+    width: number;
+    height: number;
+    quality: number;
+    keepImages: number;
+  };
+  retry: {
+    maxAttempts: number;
+    baseDelayMs: number;
+    maxDelayMs: number;
+  };
+  shortcuts: {
+    emergencyStop: string;
+    toggleWindow: string;
+    newTask: string;
+  };
+  display: {
+    preferredMonitor: 'primary' | 'cursor' | number;
+  };
 }
 
 export type DeepPartial<T> = {

@@ -8,6 +8,60 @@ type BetaComputerToolParam = {
   cache_control?: { type: 'ephemeral' };
 };
 
+interface ContentBlockStartEvent {
+  type: 'content_block_start';
+  index: number;
+  content_block: {
+    type: string;
+    id?: string;
+    name?: string;
+  };
+}
+
+interface ContentBlockDeltaEvent {
+  type: 'content_block_delta';
+  index: number;
+  delta: {
+    type: string;
+    text?: string;
+    partial_json?: string;
+  };
+}
+
+interface ContentBlockStopEvent {
+  type: 'content_block_stop';
+  index: number;
+}
+
+interface MessageDeltaEvent {
+  type: 'message_delta';
+  delta: {
+    stop_reason: string | null;
+  };
+  usage?: {
+    output_tokens: number;
+  };
+}
+
+interface MessageStopEvent {
+  type: 'message_stop';
+}
+
+type BetaStreamEvent =
+  | ContentBlockStartEvent
+  | ContentBlockDeltaEvent
+  | ContentBlockStopEvent
+  | MessageDeltaEvent
+  | MessageStopEvent
+  | { type: string };
+
+interface BetaUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
 export interface DisplayInfo {
   width: number;
   height: number;
@@ -114,33 +168,44 @@ export class AnthropicClient implements IModelClient {
     } as unknown as Anthropic.Messages.MessageStreamParams, { signal: request.signal });
 
     for await (const event of stream) {
-      switch (event.type) {
-        case 'content_block_start':
-          currentBlockIndex = (event as { index: number }).index;
-          if ((event as { content_block: { type: string; id?: string; name?: string } }).content_block.type === 'tool_use') {
-            const contentBlock = (event as { content_block: { id: string; name: string } }).content_block;
-            onEvent?.({ type: 'tool_use_start', id: contentBlock.id, name: contentBlock.name });
-          }
-          break;
-        case 'content_block_delta':
-          if ((event as { delta: { type: string } }).delta.type === 'text_delta') {
-            onEvent?.({ type: 'text_delta', text: (event as { delta: { text: string } }).delta.text });
-          } else if ((event as { delta: { type: string } }).delta.type === 'input_json_delta') {
-            onEvent?.({
-              type: 'tool_use_delta',
-              partial_json: (event as { delta: { partial_json: string } }).delta.partial_json,
+      const betaEvent = event as BetaStreamEvent;
+      
+      switch (betaEvent.type) {
+        case 'content_block_start': {
+          const e = betaEvent as ContentBlockStartEvent;
+          currentBlockIndex = e.index;
+          if (e.content_block.type === 'tool_use') {
+            onEvent?.({ 
+              type: 'tool_use_start', 
+              id: e.content_block.id, 
+              name: e.content_block.name 
             });
           }
           break;
+        }
+        case 'content_block_delta': {
+          const e = betaEvent as ContentBlockDeltaEvent;
+          if (e.delta.type === 'text_delta' && e.delta.text) {
+            onEvent?.({ type: 'text_delta', text: e.delta.text });
+          } else if (e.delta.type === 'input_json_delta' && e.delta.partial_json) {
+            onEvent?.({
+              type: 'tool_use_delta',
+              partial_json: e.delta.partial_json,
+            });
+          }
+          break;
+        }
         case 'content_block_stop':
           onEvent?.({ type: 'content_block_stop', index: currentBlockIndex });
           break;
-        case 'message_delta':
+        case 'message_delta': {
+          const e = betaEvent as MessageDeltaEvent;
           onEvent?.({
             type: 'message_delta',
-            stop_reason: (event as { delta: { stop_reason: string | null } }).delta.stop_reason,
+            stop_reason: e.delta.stop_reason,
           });
           break;
+        }
         case 'message_stop':
           onEvent?.({ type: 'message_stop' });
           break;
@@ -148,13 +213,14 @@ export class AnthropicClient implements IModelClient {
     }
 
     const finalMessage = await stream.finalMessage();
+    const betaUsage = finalMessage.usage as BetaUsage | undefined;
 
-    const usage = finalMessage.usage
+    const usage = betaUsage
       ? {
-          inputTokens: finalMessage.usage.input_tokens,
-          outputTokens: finalMessage.usage.output_tokens,
-          cacheCreationTokens: (finalMessage.usage as { cache_creation_input_tokens?: number }).cache_creation_input_tokens,
-          cacheReadTokens: (finalMessage.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens,
+          inputTokens: betaUsage.input_tokens,
+          outputTokens: betaUsage.output_tokens,
+          cacheCreationTokens: betaUsage.cache_creation_input_tokens,
+          cacheReadTokens: betaUsage.cache_read_input_tokens,
         }
       : undefined;
 

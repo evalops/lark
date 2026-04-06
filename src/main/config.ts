@@ -165,7 +165,33 @@ function buildConfig(): Config {
       dragMinSteps: num(process.env.ACTION_DRAG_MIN_STEPS, 20),
       dragStepPixels: num(process.env.ACTION_DRAG_STEP_PIXELS, 20),
     },
+    screenshot: {
+      width: num(process.env.SCREENSHOT_WIDTH, 960),
+      height: num(process.env.SCREENSHOT_HEIGHT, 720),
+      quality: num(process.env.SCREENSHOT_QUALITY, 65),
+      keepImages: num(process.env.SCREENSHOT_KEEP_IMAGES, 4),
+    },
+    retry: {
+      maxAttempts: num(process.env.RETRY_MAX_ATTEMPTS, 3),
+      baseDelayMs: num(process.env.RETRY_BASE_DELAY_MS, 1000),
+      maxDelayMs: num(process.env.RETRY_MAX_DELAY_MS, 30000),
+    },
+    shortcuts: {
+      emergencyStop: str(process.env.SHORTCUT_EMERGENCY_STOP, 'Escape'),
+      toggleWindow: str(process.env.SHORTCUT_TOGGLE_WINDOW, 'CommandOrControl+Shift+L'),
+      newTask: str(process.env.SHORTCUT_NEW_TASK, 'CommandOrControl+Shift+N'),
+    },
+    display: {
+      preferredMonitor: parseMonitorPreference(process.env.PREFERRED_MONITOR),
+    },
   };
+}
+
+function parseMonitorPreference(value: string | undefined): 'primary' | 'cursor' | number {
+  if (!value) return 'primary';
+  if (value === 'primary' || value === 'cursor') return value;
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : 'primary';
 }
 
 export let config = buildConfig();

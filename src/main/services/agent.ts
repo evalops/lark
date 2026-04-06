@@ -101,6 +101,7 @@ function assessActionSafety(action: ClaudeAction): ActionSafety {
 }
 
 import { getFrontmostAppUITree, AXElement } from './axClient';
+import { withRetry, isRateLimitError, isOverloadedError } from '../retry';
 import Anthropic from '@anthropic-ai/sdk';
 
 export interface SimplifiedAXElement {
@@ -114,20 +115,31 @@ export interface SimplifiedAXElement {
   children?: (SimplifiedAXElement | string)[];
 }
 
-const SCREENSHOT_WIDTH = 960;
-const SCREENSHOT_QUALITY = 65;
-
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-function getDisplayInfo(): DisplayInfo {
-  const primary = screen.getPrimaryDisplay();
-  const bounds = primary.bounds;
-  const screenshotScale = bounds.width / SCREENSHOT_WIDTH;
+function getDisplayInfo(preferredMonitor?: 'primary' | 'cursor' | number): DisplayInfo {
+  let display = screen.getPrimaryDisplay();
+  
+  const preference = preferredMonitor ?? config.display?.preferredMonitor ?? 'primary';
+  
+  if (preference === 'cursor') {
+    const cursorPoint = screen.getCursorScreenPoint();
+    display = screen.getDisplayNearestPoint(cursorPoint);
+  } else if (typeof preference === 'number') {
+    const allDisplays = screen.getAllDisplays();
+    if (preference >= 0 && preference < allDisplays.length) {
+      display = allDisplays[preference];
+    }
+  }
+  
+  const bounds = display.bounds;
+  const screenshotWidth = config.screenshot?.width ?? 960;
+  const screenshotScale = bounds.width / screenshotWidth;
   const screenshotHeight = Math.round(bounds.height / screenshotScale);
 
   return {
-    width: SCREENSHOT_WIDTH,
+    width: screenshotWidth,
     height: screenshotHeight,
     actualWidth: bounds.width,
     actualHeight: bounds.height,
@@ -541,13 +553,15 @@ export async function processComputerUse(
 
   logEvent('agent_start', { prompt, isResume: !!initialMessages });
 
+  const screenshotQuality = config.screenshot?.quality ?? 65;
+
   if (!initialMessages) {
     sendStatusUpdate('Step 1: Taking initial screenshot');
 
     const initialScreenshot = await captureBase64({
       width: display.width,
       height: display.height,
-      quality: SCREENSHOT_QUALITY,
+      quality: screenshotQuality,
     });
 
     const uiTree = await getFrontmostAppUITree();
@@ -614,14 +628,26 @@ export async function processComputerUse(
 
     let response;
     try {
-      response = await client.computerUseStream(
+      response = await withRetry(
+        () => client.computerUseStream(
+          {
+            messages,
+            systemPrompt: getSystemPrompt(),
+            display,
+            signal: abortSignal,
+          },
+          onStreamEvent
+        ),
         {
-          messages,
-          systemPrompt: getSystemPrompt(),
-          display,
-          signal: abortSignal,
-        },
-        onStreamEvent
+          maxAttempts: config.retry?.maxAttempts ?? 3,
+          shouldRetry: (err) => {
+            if ((err as Error)?.name === 'AbortError') return false;
+            return isRateLimitError(err) || isOverloadedError(err);
+          },
+          onRetry: (err, attempt, delayMs) => {
+            sendStatusUpdate(`Rate limited, retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt})...`);
+          },
+        }
       );
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') {
@@ -644,7 +670,6 @@ export async function processComputerUse(
       };
       
       logError('api_error', err as Error, errorDetails);
-      console.error('Full API Error:', JSON.stringify(apiError, null, 2));
       
       // Handle 400 errors - often caused by tool_use/tool_result mismatch
       if (apiError.status === 400) {
@@ -763,7 +788,7 @@ export async function processComputerUse(
           const screenshot = await captureBase64({
             width: display.width,
             height: display.height,
-            quality: SCREENSHOT_QUALITY,
+            quality: screenshotQuality,
           });
           toolResults.push({
             type: 'tool_result',
@@ -787,7 +812,7 @@ export async function processComputerUse(
           const screenshot = await captureBase64({
             width: display.width,
             height: display.height,
-            quality: SCREENSHOT_QUALITY,
+            quality: screenshotQuality,
           });
           
           // Clear the large base64 data from the screenshot tool result after it's been sent to the model
@@ -862,7 +887,7 @@ export async function processComputerUse(
       return { content: 'Stopped after repeated tool failures' };
     }
 
-    pruneHistoricalImages(messages, 4);
+    pruneHistoricalImages(messages, config.screenshot?.keepImages ?? 4);
 
     if (minStepDelay > 0) {
       await sleep(minStepDelay);
