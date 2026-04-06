@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { processComputerUse } from './agent';
-import { IModelClient } from './modelClient';
+import { IModelClient, ComputerUseResponse } from './modelClient';
 import { config } from '../config';
 
 const hoisted = vi.hoisted(() => ({
@@ -30,7 +30,7 @@ const { mockCaptureBase64, mockExecuteAction } = hoisted;
 class FakeClient implements IModelClient {
   calls = 0;
 
-  async computerUseStream() {
+  async computerUseStream(): Promise<ComputerUseResponse> {
     this.calls += 1;
     if (this.calls === 1) {
       return {
@@ -43,13 +43,13 @@ class FakeClient implements IModelClient {
           },
         ],
         stopReason: 'tool_use',
-      };
+      } as ComputerUseResponse;
     }
 
     return {
       content: [{ type: 'text', text: 'done' }],
       stopReason: 'end_turn',
-    };
+    } as ComputerUseResponse;
   }
 }
 
